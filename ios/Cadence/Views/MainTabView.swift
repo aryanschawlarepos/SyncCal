@@ -13,7 +13,7 @@ struct MainTabView: View {
     @State private var selection = Tab.calendar
 
     private enum Tab {
-        case calendar, planner, tasks
+        case calendar, upcoming, planner, tasks
     }
 
     var body: some View {
@@ -23,6 +23,12 @@ struct MainTabView: View {
                     Label("Calendar", systemImage: "calendar")
                 }
                 .tag(Tab.calendar)
+
+            UpcomingView(store: store, notifications: notifications)
+                .tabItem {
+                    Label("Upcoming", systemImage: "calendar.badge.clock")
+                }
+                .tag(Tab.upcoming)
 
             PlannerView(store: store, notifications: notifications)
                 .tabItem {

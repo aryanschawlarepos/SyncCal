@@ -20,57 +20,29 @@ struct TaskListDetailView: View {
     @State private var taskPendingDelete: CadenceTask?
     @State private var showEditor = false
 
-    private var filteredTasks: [CadenceTask] {
-        let calendar = Calendar.current
-        let today = calendar.startOfDay(for: Date())
+    private var today: Date {
+        Calendar.current.startOfDay(for: Date())
+    }
 
-        return tasks.filter { task in
-            switch scope {
-            case .smart(let smartList):
-                switch smartList {
-                case .myDay:
-                    guard let dueDate = task.dueDate else { return false }
-                    return !task.completed && calendar.isDate(dueDate, inSameDayAs: today)
-                case .upcoming:
-                    guard let dueDate = task.dueDate else { return false }
-                    return !task.completed && dueDate >= today
-                case .all:
-                    return !task.completed
-                case .completed:
-                    return task.completed
-                }
-            case .custom(let listId, _):
-                return !task.completed && task.listId == listId
-            }
-        }
-        .sorted { lhs, rhs in
-            switch (lhs.dueDate, rhs.dueDate) {
-            case let (lhsDate?, rhsDate?):
-                if lhsDate == rhsDate { return lhs.createdAt > rhs.createdAt }
-                return lhsDate < rhsDate
-            case (_?, nil):
-                return true
-            case (nil, _?):
-                return false
-            case (nil, nil):
-                return lhs.createdAt > rhs.createdAt
-            }
-        }
+    private var snapshot: TaskListSnapshot {
+        TaskListSnapshot(scope: scope, tasks: tasks, today: today)
     }
 
     var body: some View {
+        let listSnapshot = snapshot
+
         ZStack(alignment: .bottomTrailing) {
             Theme.background.ignoresSafeArea()
             Theme.glow.ignoresSafeArea()
 
             VStack(spacing: 0) {
-                header
+                header(snapshot: listSnapshot)
 
                 quickAddBar
                     .padding(.horizontal, 16)
                     .padding(.bottom, 14)
 
-                content
+                content(snapshot: listSnapshot)
             }
 
             addButton
@@ -102,7 +74,7 @@ struct TaskListDetailView: View {
         }
     }
 
-    private var header: some View {
+    private func header(snapshot: TaskListSnapshot) -> some View {
         HStack(alignment: .center, spacing: 14) {
             Image(systemName: scope.symbolName)
                 .font(.system(size: 21, weight: .semibold))
@@ -117,7 +89,7 @@ struct TaskListDetailView: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
 
-                Text("\(filteredTasks.count) \(filteredTasks.count == 1 ? "task" : "tasks")")
+                Text("\(snapshot.tasks.count) \(snapshot.tasks.count == 1 ? "task" : "tasks")")
                     .font(.system(size: 14, weight: .semibold, design: .rounded))
                     .foregroundStyle(Theme.textSecondary)
                     .contentTransition(.numericText())
@@ -159,14 +131,14 @@ struct TaskListDetailView: View {
         )
     }
 
-    private var content: some View {
+    private func content(snapshot: TaskListSnapshot) -> some View {
         Group {
-            if filteredTasks.isEmpty {
+            if snapshot.tasks.isEmpty {
                 emptyState
             } else {
                 ScrollView {
                     LazyVStack(spacing: 10) {
-                        ForEach(filteredTasks) { task in
+                        ForEach(snapshot.tasks) { task in
                             TaskRow(task: task) {
                                 taskToEdit = task
                             } onEdit: {
@@ -184,7 +156,7 @@ struct TaskListDetailView: View {
                 }
             }
         }
-        .animation(reduceMotion ? .easeInOut(duration: 0.18) : .spring(response: 0.34, dampingFraction: 0.84), value: filteredTasks.map(\.id))
+        .animation(reduceMotion ? .easeInOut(duration: 0.16) : .spring(response: 0.28, dampingFraction: 0.9), value: snapshot.tasks.map(\.id))
     }
 
     private var emptyState: some View {

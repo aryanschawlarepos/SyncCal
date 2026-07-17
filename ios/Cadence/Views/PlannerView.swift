@@ -33,63 +33,22 @@ struct PlannerView: View {
 
     private var today: Date { calendar.startOfDay(for: Date()) }
 
-    private var dayEvents: [EventItem] {
-        store.events(on: today).sorted { $0.startDate < $1.startDate }
-    }
-
-    private var allDayEvents: [EventItem] {
-        dayEvents.filter(\.isAllDay)
-    }
-
-    private var timedEvents: [EventItem] {
-        dayEvents.filter { !$0.isAllDay }
-    }
-
-    private var dueTodayTasks: [CadenceTask] {
-        tasks
-            .filter { task in
-                guard let dueDate = task.dueDate else { return false }
-                return !task.completed && calendar.isDate(dueDate, inSameDayAs: today)
-            }
-            .sorted { lhs, rhs in
-                if lhs.priorityRawValue == rhs.priorityRawValue {
-                    return lhs.createdAt > rhs.createdAt
-                }
-                return priorityRank(lhs.priority) > priorityRank(rhs.priority)
-            }
-    }
-
-    private var focusItemCount: Int {
-        allDayEvents.count + dueTodayTasks.count
-    }
-
-    private var timelineBounds: ClosedRange<Date> {
-        PlannerTimeline.bounds(for: dayEvents, day: today, calendar: calendar)
-    }
-
-    private var hourStarts: [Date] {
-        let start = calendar.dateInterval(of: .hour, for: timelineBounds.lowerBound)?.start
-            ?? timelineBounds.lowerBound
-        var result: [Date] = []
-        var current = start
-        while current < timelineBounds.upperBound {
-            result.append(current)
-            guard let next = calendar.date(byAdding: .hour, value: 1, to: current) else { break }
-            current = next
-        }
-        return result
+    private var daySnapshot: PlannerDaySnapshot {
+        PlannerDaySnapshot(events: store.events, tasks: tasks, today: today, calendar: calendar)
     }
 
     var body: some View {
+        let snapshot = daySnapshot
+
         ZStack {
             Theme.background.ignoresSafeArea()
             Theme.glow.ignoresSafeArea()
 
             VStack(spacing: 0) {
-                header
+                header(snapshot: snapshot)
 
                 GeometryReader { proxy in
-                    plannerBody(availableHeight: proxy.size.height)
+                    plannerBody(availableHeight: proxy.size.height, snapshot: snapshot)
                 }
             }
         }
@@ -164,13 +123,13 @@ struct PlannerView: View {
         }
     }
 
-    private var header: some View {
+    private func header(snapshot: PlannerDaySnapshot) -> some View {
         HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Planner")
                     .font(.system(size: 30, weight: .bold, design: .rounded))
                     .foregroundStyle(Theme.textPrimary)
-                Text(todayLabel)
+                Text(snapshot.todayLabel)
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
                     .foregroundStyle(Theme.accent)
             }
@@ -230,39 +189,39 @@ struct PlannerView: View {
         .padding(.bottom, 16)
     }
 
-    private func plannerBody(availableHeight: CGFloat) -> some View {
-        let hourHeight = dynamicHourHeight(availableHeight: availableHeight)
-        let focusHeight = estimatedFocusHeight
-        let contentHeight = focusHeight + (CGFloat(hourStarts.count) * hourHeight) + 12
+    private func plannerBody(availableHeight: CGFloat, snapshot: PlannerDaySnapshot) -> some View {
+        let hourHeight = dynamicHourHeight(availableHeight: availableHeight, snapshot: snapshot)
+        let focusHeight = estimatedFocusHeight(snapshot: snapshot)
+        let contentHeight = focusHeight + (CGFloat(snapshot.hourSections.count) * hourHeight) + 12
         let shouldScroll = contentHeight > availableHeight
 
         return Group {
             if shouldScroll {
                 ScrollView {
-                    plannerContent(hourHeight: hourHeight)
+                    plannerContent(hourHeight: hourHeight, snapshot: snapshot)
                         .padding(.bottom, 8)
                 }
             } else {
-                plannerContent(hourHeight: hourHeight)
+                plannerContent(hourHeight: hourHeight, snapshot: snapshot)
                     .frame(maxHeight: .infinity, alignment: .top)
                     .padding(.bottom, 8)
             }
         }
         .padding(.horizontal, 16)
-        .animation(reduceMotion ? .easeInOut(duration: 0.18) : .spring(response: 0.38, dampingFraction: 0.86), value: hourHeight)
-        .animation(reduceMotion ? .easeInOut(duration: 0.18) : .spring(response: 0.34, dampingFraction: 0.84), value: dayEvents.map(\.id))
-        .animation(reduceMotion ? .easeInOut(duration: 0.18) : .spring(response: 0.34, dampingFraction: 0.84), value: dueTodayTasks.map(\.id))
+        .animation(reduceMotion ? .easeInOut(duration: 0.16) : .spring(response: 0.28, dampingFraction: 0.9), value: hourHeight)
+        .animation(reduceMotion ? .easeInOut(duration: 0.16) : .spring(response: 0.28, dampingFraction: 0.9), value: snapshot.dayEvents.map(\.id))
+        .animation(reduceMotion ? .easeInOut(duration: 0.16) : .spring(response: 0.28, dampingFraction: 0.9), value: snapshot.dueTodayTasks.map(\.id))
     }
 
-    private func plannerContent(hourHeight: CGFloat) -> some View {
+    private func plannerContent(hourHeight: CGFloat, snapshot: PlannerDaySnapshot) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            if focusItemCount == 0 && timedEvents.isEmpty {
+            if snapshot.focusItemCount == 0 && snapshot.timedEvents.isEmpty {
                 openDayBanner
-            } else if focusItemCount > 0 {
-                focusSection
+            } else if snapshot.focusItemCount > 0 {
+                focusSection(snapshot: snapshot)
             }
 
-            timeline(hourHeight: hourHeight)
+            timeline(hourHeight: hourHeight, sections: snapshot.hourSections)
         }
     }
 
@@ -293,43 +252,39 @@ struct PlannerView: View {
         )
     }
 
-    private var focusSection: some View {
+    private func focusSection(snapshot: PlannerDaySnapshot) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("FOCUS")
                 .font(.system(size: 11, weight: .bold, design: .rounded))
                 .foregroundStyle(Theme.textTertiary)
                 .tracking(1)
 
-            ForEach(allDayEvents) { event in
+            ForEach(snapshot.allDayEvents) { event in
                 plannerEventCard(event, compact: true)
                     .onTapGesture { eventToInspect = event }
                     .contextMenu { eventContextMenu(for: event) }
             }
 
-            ForEach(dueTodayTasks) { task in
+            ForEach(snapshot.dueTodayTasks) { task in
                 plannerTaskCard(task)
                     .contextMenu { taskContextMenu(for: task) }
             }
         }
     }
 
-    private func timeline(hourHeight: CGFloat) -> some View {
+    private func timeline(hourHeight: CGFloat, sections: [PlannerHourSection]) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            ForEach(hourStarts, id: \.self) { hour in
-                hourRow(hour, height: hourHeight)
+            ForEach(sections) { section in
+                hourRow(section, height: hourHeight)
             }
         }
     }
 
-    private func hourRow(_ hour: Date, height: CGFloat) -> some View {
-        let nextHour = calendar.date(byAdding: .hour, value: 1, to: hour) ?? hour
-        let events = timedEvents.filter { event in
-            event.startDate >= hour && event.startDate < nextHour
-        }
+    private func hourRow(_ section: PlannerHourSection, height: CGFloat) -> some View {
         let compact = height < 54
 
         return HStack(alignment: .top, spacing: 12) {
-            Text(hourLabel(hour))
+            Text(section.label)
                 .font(.system(size: 12, weight: .semibold, design: .rounded))
                 .foregroundStyle(Theme.textTertiary)
                 .frame(width: 58, alignment: .leading)
@@ -340,21 +295,21 @@ struct PlannerView: View {
                     .fill(Theme.stroke)
                     .frame(height: 1)
 
-                ForEach(events) { event in
+                ForEach(section.events) { event in
                     plannerEventCard(event, compact: compact)
                         .onTapGesture { eventToInspect = event }
                         .contextMenu { eventContextMenu(for: event) }
                         .transition(.opacity.combined(with: .move(edge: .trailing)))
                 }
 
-                emptyHourTapTarget(hour: hour, height: height, eventCount: events.count)
+                emptyHourTapTarget(hour: section.hour, label: section.label, height: height, eventCount: section.events.count)
             }
             .frame(maxWidth: .infinity, minHeight: height, alignment: .topLeading)
         }
         .frame(minHeight: height, alignment: .top)
     }
 
-    private func emptyHourTapTarget(hour: Date, height: CGFloat, eventCount: Int) -> some View {
+    private func emptyHourTapTarget(hour: Date, label: String, height: CGFloat, eventCount: Int) -> some View {
         Button {
             createEvent(at: hour)
         } label: {
@@ -365,7 +320,7 @@ struct PlannerView: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Create event at \(hourLabel(hour))")
+        .accessibilityLabel("Create event at \(label)")
     }
 
     private func emptyTapHeight(for hourHeight: CGFloat, eventCount: Int) -> CGFloat {
@@ -518,19 +473,20 @@ struct PlannerView: View {
         }
     }
 
-    private var estimatedFocusHeight: CGFloat {
-        guard focusItemCount > 0 || timedEvents.isEmpty else { return 0 }
-        let bannerHeight: CGFloat = timedEvents.isEmpty && focusItemCount == 0 ? 72 : 0
-        let sectionHeader: CGFloat = focusItemCount > 0 ? 24 : 0
-        return bannerHeight + sectionHeader + CGFloat(focusItemCount) * 58
+    private func estimatedFocusHeight(snapshot: PlannerDaySnapshot) -> CGFloat {
+        guard snapshot.focusItemCount > 0 || snapshot.timedEvents.isEmpty else { return 0 }
+        let bannerHeight: CGFloat = snapshot.timedEvents.isEmpty && snapshot.focusItemCount == 0 ? 72 : 0
+        let sectionHeader: CGFloat = snapshot.focusItemCount > 0 ? 24 : 0
+        return bannerHeight + sectionHeader + CGFloat(snapshot.focusItemCount) * 58
     }
 
-    private func dynamicHourHeight(availableHeight: CGFloat) -> CGFloat {
-        guard !hourStarts.isEmpty else { return maximumHourHeight }
-        let reservedHeight = estimatedFocusHeight + 12
-        let availableForTimeline = max(availableHeight - reservedHeight - 8, CGFloat(hourStarts.count) * minimumHourHeight)
-        let proposedHeight = availableForTimeline / CGFloat(hourStarts.count)
-        let eventPressure = CGFloat(max(timedEvents.count - 3, 0)) * 2
+    private func dynamicHourHeight(availableHeight: CGFloat, snapshot: PlannerDaySnapshot) -> CGFloat {
+        guard !snapshot.hourSections.isEmpty else { return maximumHourHeight }
+        let reservedHeight = estimatedFocusHeight(snapshot: snapshot) + 12
+        let hourCount = CGFloat(snapshot.hourSections.count)
+        let availableForTimeline = max(availableHeight - reservedHeight - 8, hourCount * minimumHourHeight)
+        let proposedHeight = availableForTimeline / hourCount
+        let eventPressure = CGFloat(max(snapshot.timedEvents.count - 3, 0)) * 2
         return min(maximumHourHeight, max(minimumHourHeight, proposedHeight - eventPressure))
     }
 

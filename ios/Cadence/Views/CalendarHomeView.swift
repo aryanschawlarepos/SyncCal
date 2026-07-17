@@ -19,38 +19,32 @@ struct CalendarHomeView: View {
 
     private let calendar = Calendar.current
 
-    private var monthTitle: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMMM"
-        return formatter.string(from: store.displayedMonth)
-    }
-
     private var yearTitle: String {
         String(calendar.component(.year, from: store.displayedMonth))
     }
 
-    private var dayEvents: [EventItem] {
-        store.events(on: store.selectedDate)
-    }
-
     var body: some View {
+        let monthTitle = CachedDateFormatters.monthName.string(from: store.displayedMonth)
+        let eventCounts = store.eventCounts()
+        let selectedDayEvents = store.events(on: store.selectedDate)
+
         ZStack(alignment: .bottomTrailing) {
             Theme.background.ignoresSafeArea()
             Theme.glow.ignoresSafeArea()
 
             VStack(spacing: 0) {
-                header
+                header(monthTitle: monthTitle)
                 MonthGridView(
                     month: store.displayedMonth,
                     selectedDate: store.selectedDate,
-                    counts: store.eventCounts(),
+                    counts: eventCounts,
                     onSelect: select
                 )
                 .padding(.horizontal, 16)
                 .padding(.top, 4)
 
                 agendaHeader
-                agendaList
+                agendaList(events: selectedDayEvents)
             }
 
             addButton
@@ -103,7 +97,7 @@ struct CalendarHomeView: View {
 
     // MARK: - Header
 
-    private var header: some View {
+    private func header(monthTitle: String) -> some View {
         HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: -2) {
                 Text(monthTitle)
@@ -154,7 +148,7 @@ struct CalendarHomeView: View {
         .padding(.bottom, 10)
     }
 
-    private var agendaList: some View {
+    private func agendaList(events dayEvents: [EventItem]) -> some View {
         Group {
             if dayEvents.isEmpty {
                 emptyState
@@ -267,9 +261,7 @@ struct CalendarHomeView: View {
     private var selectedDayLabel: String {
         if calendar.isDateInToday(store.selectedDate) { return "Today" }
         if calendar.isDateInTomorrow(store.selectedDate) { return "Tomorrow" }
-        let formatter = DateFormatter()
-        formatter.dateFormat = "EEEE, MMM d"
-        return formatter.string(from: store.selectedDate)
+        return CachedDateFormatters.dayWithWeekday.string(from: store.selectedDate)
     }
 
     private func circleButton(icon: String, action: @escaping () -> Void) -> some View {

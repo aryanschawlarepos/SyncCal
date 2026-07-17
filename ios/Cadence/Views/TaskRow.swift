@@ -131,8 +131,6 @@ struct TaskRow: View {
         if calendar.isDateInToday(date) { return "Today" }
         if calendar.isDateInTomorrow(date) { return "Tomorrow" }
 
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMM d"
-        return formatter.string(from: date)
+        return CachedDateFormatters.shortMonthDay.string(from: date)
     }
 }

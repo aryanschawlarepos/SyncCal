@@ -39,15 +39,11 @@ struct EventItem: Identifiable, Hashable {
 
     var timeLabel: String {
         if isAllDay { return "All-day" }
-        let formatter = DateFormatter()
-        formatter.dateFormat = "h:mm a"
-        return formatter.string(from: startDate)
+        return CachedDateFormatters.eventTime.string(from: startDate)
     }
 
     var rangeLabel: String {
         if isAllDay { return "All-day" }
-        let formatter = DateFormatter()
-        formatter.dateFormat = "h:mm a"
-        return "\(formatter.string(from: startDate)) – \(formatter.string(from: endDate))"
+        return "\(CachedDateFormatters.eventTime.string(from: startDate)) – \(CachedDateFormatters.eventTime.string(from: endDate))"
     }
 }

@@ -74,7 +74,10 @@ final class CalendarStore {
     var calendars: [EKCalendar] = []
     var hiddenCalendarIDs: Set<String> = []
     var events: [EventItem] = []
+    var upcomingEvents: [EventItem] = []
     var accessErrorMessage: String?
+    private var eventsByDay: [Date: [EventItem]] = [:]
+    private var eventCountsByDay: [Date: Int] = [:]
 
     var displayedMonth: Date = Date().startOfMonth
     var selectedDate: Date = Calendar.current.startOfDay(for: Date())
@@ -175,16 +178,30 @@ final class CalendarStore {
         loadEvents(from: dayStart, to: dayEnd)
     }
 
+    /// Fetches a rolling agenda window for Upcoming without changing the visible calendar month cache.
+    func reloadUpcomingEvents(daysAhead: Int = 120) {
+        guard hasAccess else { return }
+        let calendar = Calendar.current
+        let start = calendar.startOfDay(for: Date())
+        let end = calendar.date(byAdding: .day, value: daysAhead, to: start) ?? start.addingTimeInterval(10_368_000)
+        upcomingEvents = fetchEvents(from: start, to: end)
+    }
+
     private func loadEvents(from start: Date, to end: Date) {
+        events = fetchEvents(from: start, to: end)
+        rebuildEventIndexes()
+    }
+
+    private func fetchEvents(from start: Date, to end: Date) -> [EventItem] {
         let active = calendars.filter { !hiddenCalendarIDs.contains($0.calendarIdentifier) }
-        guard !active.isEmpty else { events = []; return }
+        guard !active.isEmpty else { return [] }
 
         let predicate = eventStore.predicateForEvents(
             withStart: start,
             end: end,
             calendars: active
         )
-        events = eventStore.events(matching: predicate)
+        return eventStore.events(matching: predicate)
             .map { ekEvent in
                 EventItem(
                     id: ekEvent.eventIdentifier ?? UUID().uuidString,
@@ -208,30 +225,34 @@ final class CalendarStore {
     // MARK: - Queries
 
     func events(on day: Date) -> [EventItem] {
-        let cal = Calendar.current
-        let dayStart = cal.startOfDay(for: day)
-        guard let dayEnd = cal.date(byAdding: .day, value: 1, to: dayStart) else { return [] }
-        return events.filter { event in
-            // An event belongs to the day if its span overlaps the day's [start, end) window.
-            event.startDate < dayEnd && event.endDate >= dayStart
-        }
+        let dayStart = Calendar.current.startOfDay(for: day)
+        return eventsByDay[dayStart, default: []]
     }
 
     /// Days in the current month that contain at least one event (for the grid dots).
     func eventCounts() -> [Date: Int] {
+        eventCountsByDay
+    }
+
+    private func rebuildEventIndexes() {
         let cal = Calendar.current
+        var eventsByDay: [Date: [EventItem]] = [:]
         var counts: [Date: Int] = [:]
+
         for event in events {
             var day = cal.startOfDay(for: event.startDate)
             let lastDay = cal.startOfDay(for: event.endDate)
 
             while day <= lastDay {
                 counts[day, default: 0] += 1
+                eventsByDay[day, default: []].append(event)
                 guard let nextDay = cal.date(byAdding: .day, value: 1, to: day) else { break }
                 day = nextDay
             }
         }
-        return counts
+
+        self.eventsByDay = eventsByDay.mapValues { $0.sorted { $0.startDate < $1.startDate } }
+        eventCountsByDay = counts
     }
 
     var writableCalendars: [EKCalendar] {
@@ -278,6 +299,7 @@ final class CalendarStore {
             )
         }
         reload()
+        reloadUpcomingEvents()
     }
 
     func updateEvent(
@@ -331,6 +353,7 @@ final class CalendarStore {
 
         Self.logger.info("Event updated successfully. Event id: \(id, privacy: .public)")
         reload()
+        reloadUpcomingEvents()
     }
 
     func deleteEvent(id: String) throws {
@@ -346,6 +369,7 @@ final class CalendarStore {
         notifications.cancel(id: id)
         Self.logger.info("Event deleted successfully. Event id: \(id, privacy: .public)")
         reload()
+        reloadUpcomingEvents()
     }
 
     private func reminderBody(for reminder: ReminderOffset, start: Date, isAllDay: Bool) -> String {

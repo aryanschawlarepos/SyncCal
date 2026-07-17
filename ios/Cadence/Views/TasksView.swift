@@ -81,7 +81,17 @@ struct TasksView: View {
     @State private var listToRename: TaskList?
     @State private var renameListName = ""
 
+    private var today: Date {
+        Calendar.current.startOfDay(for: Date())
+    }
+
+    private var summary: TaskDashboardSummary {
+        TaskDashboardSummary(tasks: tasks, today: today)
+    }
+
     var body: some View {
+        let dashboardSummary = summary
+
         NavigationStack {
             ZStack(alignment: .bottomTrailing) {
                 Theme.background.ignoresSafeArea()
@@ -89,9 +99,9 @@ struct TasksView: View {
 
                 ScrollView {
                     VStack(alignment: .leading, spacing: 22) {
-                        header
-                        smartLists
-                        customLists
+                        header(summary: dashboardSummary)
+                        smartLists(summary: dashboardSummary)
+                        customLists(summary: dashboardSummary)
                     }
                     .padding(.horizontal, 20)
                     .padding(.top, 8)
@@ -125,13 +135,13 @@ struct TasksView: View {
         }
     }
 
-    private var header: some View {
+    private func header(summary: TaskDashboardSummary) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Tasks")
                 .font(.system(size: 34, weight: .bold, design: .rounded))
                 .foregroundStyle(Theme.textPrimary)
 
-            Text("\(openTaskCount) open • \(completedTaskCount) completed")
+            Text("\(summary.openCount) open • \(summary.completedCount) completed")
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
                 .foregroundStyle(Theme.accent)
                 .contentTransition(.numericText())
@@ -139,20 +149,20 @@ struct TasksView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var smartLists: some View {
+    private func smartLists(summary: TaskDashboardSummary) -> some View {
         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
             ForEach(TaskSmartList.allCases) { smartList in
                 NavigationLink {
                     TaskListDetailView(scope: .smart(smartList))
                 } label: {
-                    smartListCard(smartList)
+                    smartListCard(smartList, count: summary.smartCounts[smartList, default: 0])
                 }
                 .buttonStyle(PressScaleButtonStyle(scale: 0.97))
             }
         }
     }
 
-    private func smartListCard(_ smartList: TaskSmartList) -> some View {
+    private func smartListCard(_ smartList: TaskSmartList, count: Int) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
                 Image(systemName: smartList.symbolName)
@@ -163,7 +173,7 @@ struct TasksView: View {
 
                 Spacer()
 
-                Text("\(count(for: smartList))")
+                Text("\(count)")
                     .font(.system(size: 22, weight: .bold, design: .rounded))
                     .foregroundStyle(Theme.textPrimary)
                     .contentTransition(.numericText())
@@ -182,7 +192,7 @@ struct TasksView: View {
         )
     }
 
-    private var customLists: some View {
+    private func customLists(summary: TaskDashboardSummary) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text("Lists")
@@ -214,7 +224,7 @@ struct TasksView: View {
                         NavigationLink {
                             TaskListDetailView(scope: .custom(list.id, list.name))
                         } label: {
-                            customListRow(list)
+                            customListRow(list, count: summary.openCountsByListId[list.id, default: 0])
                         }
                         .buttonStyle(PressScaleButtonStyle(scale: 0.98))
                         .contextMenu {
@@ -250,7 +260,7 @@ struct TasksView: View {
         }
     }
 
-    private func customListRow(_ list: TaskList) -> some View {
+    private func customListRow(_ list: TaskList, count: Int) -> some View {
         HStack(spacing: 14) {
             Image(systemName: "list.bullet.rectangle.fill")
                 .font(.system(size: 17, weight: .semibold))
@@ -264,7 +274,7 @@ struct TasksView: View {
 
             Spacer()
 
-            Text("\(tasks.filter { !$0.completed && $0.listId == list.id }.count)")
+            Text("\(count)")
                 .font(.system(size: 14, weight: .bold, design: .rounded))
                 .foregroundStyle(Theme.textSecondary)
 
@@ -321,38 +331,6 @@ struct TasksView: View {
         .accessibilityLabel("Add task")
         .padding(.trailing, 22)
         .padding(.bottom, 28)
-    }
-
-    private var openTaskCount: Int {
-        tasks.filter { !$0.completed }.count
-    }
-
-    private var completedTaskCount: Int {
-        tasks.filter(\.completed).count
-    }
-
-    private func count(for smartList: TaskSmartList) -> Int {
-        filteredTasks(for: smartList).count
-    }
-
-    private func filteredTasks(for smartList: TaskSmartList) -> [CadenceTask] {
-        let calendar = Calendar.current
-        let today = calendar.startOfDay(for: Date())
-
-        return tasks.filter { task in
-            switch smartList {
-            case .myDay:
-                guard let dueDate = task.dueDate else { return false }
-                return !task.completed && calendar.isDate(dueDate, inSameDayAs: today)
-            case .upcoming:
-                guard let dueDate = task.dueDate else { return false }
-                return !task.completed && dueDate >= today
-            case .all:
-                return !task.completed
-            case .completed:
-                return task.completed
-            }
-        }
     }
 
     private func color(for smartList: TaskSmartList) -> Color {
