@@ -7,6 +7,8 @@ import SwiftUI
 
 /// Root view: routes between the onboarding permission gate and the calendar home.
 struct ContentView: View {
+    @Environment(\.colorScheme) private var colorScheme
+
     @State private var notifications = NotificationManager()
     @State private var store: CalendarStore
 
@@ -19,7 +21,7 @@ struct ContentView: View {
     var body: some View {
         Group {
             if store.hasAccess {
-                CalendarHomeView(store: store, notifications: notifications)
+                MainTabView(store: store, notifications: notifications)
                     .transition(.opacity)
             } else {
                 PermissionGateView(store: store)
@@ -27,7 +29,8 @@ struct ContentView: View {
             }
         }
         .animation(.easeInOut(duration: 0.35), value: store.hasAccess)
-        .preferredColorScheme(.dark)
+        .animation(.easeInOut(duration: 0.22), value: colorScheme)
+        .preferredColorScheme(Theme.preferredColorScheme)
         .task {
             await notifications.refreshStatus()
             if store.hasAccess {

@@ -12,6 +12,10 @@ struct CalendarHomeView: View {
 
     @State private var showEditor = false
     @State private var showCalendars = false
+    @State private var eventToInspect: EventItem?
+    @State private var eventToEdit: EventItem?
+    @State private var eventPendingDelete: EventItem?
+    @State private var deletionErrorMessage: String?
 
     private let calendar = Calendar.current
 
@@ -54,9 +58,46 @@ struct CalendarHomeView: View {
         .sheet(isPresented: $showEditor) {
             EventEditorView(store: store, notifications: notifications, initialDate: store.selectedDate)
         }
+        .sheet(item: $eventToInspect) { event in
+            EventDetailView(
+                event: event,
+                onEdit: { eventToEdit = event },
+                onDelete: { eventPendingDelete = event }
+            )
+            .presentationDetents([.medium, .large])
+        }
+        .sheet(item: $eventToEdit) { event in
+            EventEditorView(
+                event: event,
+                store: store,
+                notifications: notifications,
+                initialDate: event.startDate
+            )
+            .presentationDetents([.medium, .large])
+        }
         .sheet(isPresented: $showCalendars) {
             CalendarsSheet(store: store)
                 .presentationDetents([.medium, .large])
+        }
+        .confirmationDialog("Delete Event?", isPresented: eventDeleteDialogBinding) {
+            if let eventPendingDelete {
+                Button("Delete Event", role: .destructive) {
+                    delete(eventPendingDelete)
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            if let eventPendingDelete {
+                Text("This removes “\(eventPendingDelete.title)” from \(eventPendingDelete.calendarTitle).")
+            }
+        }
+        .alert("Couldn’t delete event", isPresented: deletionErrorBinding) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(deletionErrorMessage ?? "The event could not be deleted.")
+        }
+        .task {
+            store.reload()
         }
     }
 
@@ -122,11 +163,26 @@ struct CalendarHomeView: View {
                     LazyVStack(spacing: 10) {
                         ForEach(dayEvents) { event in
                             EventRow(event: event)
+                                .onTapGesture { eventToInspect = event }
                                 .contextMenu {
-                                    Button(role: .destructive) {
-                                        store.deleteEvent(id: event.id)
+                                    Button {
+                                        eventToInspect = event
                                     } label: {
-                                        Label("Delete", systemImage: "trash")
+                                        Label("Details", systemImage: "info.circle")
+                                    }
+
+                                    if event.editable {
+                                        Button {
+                                            eventToEdit = event
+                                        } label: {
+                                            Label("Edit", systemImage: "pencil")
+                                        }
+
+                                        Button(role: .destructive) {
+                                            eventPendingDelete = event
+                                        } label: {
+                                            Label("Delete", systemImage: "trash")
+                                        }
                                     }
                                 }
                                 .transition(.move(edge: .trailing).combined(with: .opacity))
@@ -141,20 +197,49 @@ struct CalendarHomeView: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 14) {
             Spacer()
-            Image(systemName: "sparkles")
-                .font(.system(size: 40))
-                .foregroundStyle(Theme.accent.opacity(0.8))
+
+            ZStack {
+                Circle()
+                    .fill(Theme.accentSoft)
+                    .frame(width: 82, height: 82)
+
+                Image(systemName: "calendar.badge.plus")
+                    .font(.system(size: 34, weight: .semibold))
+                    .foregroundStyle(Theme.accentGradient)
+            }
+
             Text("Nothing planned")
-                .font(.system(size: 18, weight: .semibold, design: .rounded))
+                .font(.system(size: 21, weight: .bold, design: .rounded))
                 .foregroundStyle(Theme.textPrimary)
-            Text("Tap + to add something to this day.")
-                .font(.system(size: 14))
+
+            Text("A clear day. Add an event, or keep the space open.")
+                .font(.system(size: 15))
                 .foregroundStyle(Theme.textSecondary)
+                .multilineTextAlignment(.center)
+                .lineSpacing(2)
+                .frame(maxWidth: 260)
+
+            Button {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                showEditor = true
+            } label: {
+                Label("Add event", systemImage: "plus")
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .foregroundStyle(Theme.onAccent)
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 11)
+                    .background(Theme.accentGradient, in: .capsule)
+            }
+            .buttonStyle(PressScaleButtonStyle(scale: 0.94))
+            .padding(.top, 4)
+
             Spacer()
         }
         .frame(maxWidth: .infinity)
+        .padding(.horizontal, 24)
+        .accessibilityElement(children: .combine)
     }
 
     // MARK: - Add button
@@ -166,12 +251,13 @@ struct CalendarHomeView: View {
         } label: {
             Image(systemName: "plus")
                 .font(.system(size: 26, weight: .semibold))
-                .foregroundStyle(Theme.background)
+                .foregroundStyle(Theme.onAccent)
                 .frame(width: 62, height: 62)
                 .background(Theme.accentGradient, in: .circle)
                 .shadow(color: Theme.accent.opacity(0.45), radius: 18, y: 8)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressScaleButtonStyle())
+        .accessibilityLabel("Add event")
         .padding(.trailing, 22)
         .padding(.bottom, 28)
     }
@@ -195,15 +281,17 @@ struct CalendarHomeView: View {
                 .background(Theme.surface, in: .circle)
                 .overlay(Circle().stroke(Theme.stroke, lineWidth: 1))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressScaleButtonStyle(scale: 0.92))
     }
 
     private func select(_ date: Date) {
+        UISelectionFeedbackGenerator().selectionChanged()
         store.selectedDate = calendar.startOfDay(for: date)
     }
 
     private func changeMonth(by value: Int) {
         guard let newMonth = calendar.date(byAdding: .month, value: value, to: store.displayedMonth) else { return }
+        UISelectionFeedbackGenerator().selectionChanged()
         withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
             store.displayedMonth = newMonth.startOfMonth
         }
@@ -218,5 +306,38 @@ struct CalendarHomeView: View {
             }
             store.reload()
         }
+    }
+
+    private func delete(_ event: EventItem) {
+        do {
+            try store.deleteEvent(id: event.id)
+            eventPendingDelete = nil
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        } catch {
+            deletionErrorMessage = error.localizedDescription
+            UINotificationFeedbackGenerator().notificationOccurred(.error)
+        }
+    }
+
+    private var eventDeleteDialogBinding: Binding<Bool> {
+        Binding(
+            get: { eventPendingDelete != nil },
+            set: { isPresented in
+                if !isPresented {
+                    eventPendingDelete = nil
+                }
+            }
+        )
+    }
+
+    private var deletionErrorBinding: Binding<Bool> {
+        Binding(
+            get: { deletionErrorMessage != nil },
+            set: { isPresented in
+                if !isPresented {
+                    deletionErrorMessage = nil
+                }
+            }
+        )
     }
 }

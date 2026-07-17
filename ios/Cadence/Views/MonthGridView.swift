@@ -90,7 +90,7 @@ private struct DayCell: View {
     }
 
     private var numberColor: Color {
-        if isSelected { return Theme.background }
+        if isSelected { return Theme.onAccent }
         if isToday { return Theme.accent }
         return Theme.textPrimary
     }

@@ -6,44 +6,84 @@
 import EventKit
 import SwiftUI
 
-/// Fast, focused event-creation sheet.
+/// Fast, focused event creation and editing sheet.
 struct EventEditorView: View {
+    let event: EventItem?
     let store: CalendarStore
     let notifications: NotificationManager
     let initialDate: Date
+    let initialStartDate: Date?
 
     @Environment(\.dismiss) private var dismiss
 
-    @State private var title = ""
-    @State private var location = ""
-    @State private var notes = ""
-    @State private var isAllDay = false
+    @State private var title: String
+    @State private var location: String
+    @State private var notes: String
+    @State private var isAllDay: Bool
     @State private var startDate: Date
     @State private var endDate: Date
-    @State private var reminder: ReminderOffset = .min15
+    @State private var reminder: ReminderOffset
     @State private var selectedCalendar: EKCalendar?
     @State private var showNotificationDeniedAlert = false
+    @State private var saveErrorMessage: String?
 
-    init(store: CalendarStore, notifications: NotificationManager, initialDate: Date) {
+    init(
+        event: EventItem? = nil,
+        store: CalendarStore,
+        notifications: NotificationManager,
+        initialDate: Date,
+        initialStartDate: Date? = nil
+    ) {
+        self.event = event
         self.store = store
         self.notifications = notifications
         self.initialDate = initialDate
+        self.initialStartDate = initialStartDate
 
         let calendar = Calendar.current
         let now = Date()
-        // Start at the next round hour on the selected day.
-        let base = calendar.date(
+        let base = event?.startDate ?? initialStartDate ?? calendar.date(
             bySettingHour: calendar.component(.hour, from: now) + 1,
             minute: 0,
             second: 0,
             of: initialDate
         ) ?? initialDate
+        _title = State(initialValue: event?.title ?? "")
+        _location = State(initialValue: event?.location ?? "")
+        _notes = State(initialValue: event?.notes ?? "")
+        _isAllDay = State(initialValue: event?.isAllDay ?? false)
         _startDate = State(initialValue: base)
-        _endDate = State(initialValue: base.addingTimeInterval(3600))
+        _endDate = State(initialValue: event?.endDate ?? base.addingTimeInterval(3600))
+        _reminder = State(initialValue: event == nil ? .min15 : .none)
     }
 
     private var canSave: Bool {
-        !title.trimmingCharacters(in: .whitespaces).isEmpty && selectedCalendar != nil
+        !title.trimmingCharacters(in: .whitespaces).isEmpty
+            && selectedCalendar != nil
+            && normalizedEndDate > normalizedStartDate
+            && (event?.editable ?? true)
+    }
+
+    private var normalizedStartDate: Date {
+        isAllDay ? Calendar.current.startOfDay(for: startDate) : startDate
+    }
+
+    private var normalizedEndDate: Date {
+        if isAllDay {
+            return Calendar.current.date(byAdding: .day, value: 1, to: normalizedStartDate)
+                ?? normalizedStartDate.addingTimeInterval(86_400)
+        }
+
+        return endDate
+    }
+
+    private var matchingCalendarForEvent: EKCalendar? {
+        guard let event else { return nil }
+        return store.writableCalendars.first {
+            $0.title == event.calendarTitle && $0.source.title == event.sourceTitle
+        } ?? store.writableCalendars.first {
+            $0.title == event.calendarTitle
+        }
     }
 
     var body: some View {
@@ -62,7 +102,7 @@ struct EventEditorView: View {
             }
             .scrollDismissesKeyboard(.interactively)
             .background(Theme.background)
-            .navigationTitle("New Event")
+            .navigationTitle(event == nil ? "New Event" : "Edit Event")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(Theme.background, for: .navigationBar)
             .toolbar {
@@ -71,7 +111,7 @@ struct EventEditorView: View {
                         .foregroundStyle(Theme.textSecondary)
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Add") { save() }
+                    Button(event == nil ? "Add" : "Save") { save() }
                         .font(.body.weight(.semibold))
                         .foregroundStyle(canSave ? Theme.accent : Theme.textTertiary)
                         .disabled(!canSave)
@@ -89,7 +129,7 @@ struct EventEditorView: View {
             }
             .onAppear {
                 if selectedCalendar == nil {
-                    selectedCalendar = store.defaultCalendar
+                    selectedCalendar = matchingCalendarForEvent ?? store.defaultCalendar
                 }
             }
             .alert("Reminders are off", isPresented: $showNotificationDeniedAlert) {
@@ -97,8 +137,12 @@ struct EventEditorView: View {
             } message: {
                 Text("Enable notifications for Cadence in Settings to receive reminders. Your event will still save.")
             }
+            .alert("Event not saved", isPresented: saveErrorBinding) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(saveErrorMessage ?? "Please try again.")
+            }
         }
-        .preferredColorScheme(.dark)
     }
 
     // MARK: - Cards
@@ -223,21 +267,47 @@ struct EventEditorView: View {
         guard let calendar = selectedCalendar else { return }
         let trimmed = title.trimmingCharacters(in: .whitespaces)
         do {
-            try store.createEvent(
-                title: trimmed,
-                start: startDate,
-                end: isAllDay ? startDate : endDate,
-                isAllDay: isAllDay,
-                calendar: calendar,
-                location: location.isEmpty ? nil : location,
-                notes: notes.isEmpty ? nil : notes,
-                reminder: reminder
-            )
+            if let event {
+                try store.updateEvent(
+                    id: event.id,
+                    title: trimmed,
+                    start: normalizedStartDate,
+                    end: normalizedEndDate,
+                    isAllDay: isAllDay,
+                    calendar: calendar,
+                    location: location.isEmpty ? nil : location,
+                    notes: notes.isEmpty ? nil : notes,
+                    reminder: reminder
+                )
+            } else {
+                try store.createEvent(
+                    title: trimmed,
+                    start: normalizedStartDate,
+                    end: normalizedEndDate,
+                    isAllDay: isAllDay,
+                    calendar: calendar,
+                    location: location.isEmpty ? nil : location,
+                    notes: notes.isEmpty ? nil : notes,
+                    reminder: reminder
+                )
+            }
             UINotificationFeedbackGenerator().notificationOccurred(.success)
             dismiss()
         } catch {
             UINotificationFeedbackGenerator().notificationOccurred(.error)
+            saveErrorMessage = error.localizedDescription
         }
+    }
+
+    private var saveErrorBinding: Binding<Bool> {
+        Binding(
+            get: { saveErrorMessage != nil },
+            set: { isPresented in
+                if !isPresented {
+                    saveErrorMessage = nil
+                }
+            }
+        )
     }
 
     private func hex(_ cgColor: CGColor?) -> UInt {

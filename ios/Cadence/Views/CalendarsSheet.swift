@@ -55,7 +55,6 @@ struct CalendarsSheet: View {
                 }
             }
         }
-        .preferredColorScheme(.dark)
     }
 
     private func row(for cal: EKCalendar) -> some View {

@@ -4,6 +4,7 @@
 //
 
 import EventKit
+import OSLog
 import SwiftUI
 
 /// Reminder offset options offered when creating an event.
@@ -38,11 +39,34 @@ enum ReminderOffset: String, CaseIterable, Identifiable {
     }
 }
 
+enum CalendarAccessResult: Equatable {
+    case granted
+    case needsSettings(String)
+    case unavailable(String)
+}
+
+enum CalendarStoreError: LocalizedError {
+    case eventNotFound
+    case readOnlyCalendar
+
+    var errorDescription: String? {
+        switch self {
+        case .eventNotFound:
+            return "Cadence could not find this event. It may have been moved or deleted in the source calendar."
+        case .readOnlyCalendar:
+            return "Changes to this event must be made in the original calendar."
+        }
+    }
+}
+
 /// Owns the EventKit store, authorization state, calendars and the events for the visible range.
 /// EventKit surfaces every calendar synced to the device — Apple (iCloud) accounts as well as
 /// Google accounts the user has added in iOS Settings — so both appear here automatically.
 @Observable
+@MainActor
 final class CalendarStore {
+    private static let logger = Logger(subsystem: "com.rork.Cadence", category: "CalendarStore")
+
     private let eventStore = EKEventStore()
     private let notifications: NotificationManager
 
@@ -50,6 +74,7 @@ final class CalendarStore {
     var calendars: [EKCalendar] = []
     var hiddenCalendarIDs: Set<String> = []
     var events: [EventItem] = []
+    var accessErrorMessage: String?
 
     var displayedMonth: Date = Date().startOfMonth
     var selectedDate: Date = Calendar.current.startOfDay(for: Date())
@@ -60,21 +85,71 @@ final class CalendarStore {
     }
 
     var hasAccess: Bool {
-        authorizationStatus == .fullAccess || authorizationStatus == .authorized
+        switch authorizationStatus {
+        case .fullAccess:
+            return true
+        case .authorized:
+            return true
+        default:
+            return false
+        }
     }
 
     // MARK: - Authorization
 
-    func requestAccess() async {
-        do {
-            _ = try await eventStore.requestFullAccessToEvents()
-        } catch {
-            // User declined or an error occurred; status reflects the outcome.
-        }
-        authorizationStatus = EKEventStore.authorizationStatus(for: .event)
-        if hasAccess {
+    @discardableResult
+    func requestAccess() async -> CalendarAccessResult {
+        Self.logger.info("Calendar access request started. Current status: \(String(describing: self.authorizationStatus), privacy: .public)")
+
+        switch authorizationStatus {
+        case .fullAccess, .authorized:
+            accessErrorMessage = nil
             loadCalendars()
             reload()
+            Self.logger.info("Calendar access already granted. Status: \(String(describing: self.authorizationStatus), privacy: .public)")
+            return .granted
+        case .denied, .restricted:
+            let message = settingsAccessMessage(for: authorizationStatus)
+            accessErrorMessage = message
+            Self.logger.warning("Calendar access cannot be requested in-app. Status: \(String(describing: self.authorizationStatus), privacy: .public)")
+            return .needsSettings(message)
+        case .notDetermined, .writeOnly:
+            break
+        @unknown default:
+            Self.logger.warning("Calendar access request continuing for unknown status: \(String(describing: self.authorizationStatus), privacy: .public)")
+        }
+
+        do {
+            let granted = try await eventStore.requestFullAccessToEvents()
+            authorizationStatus = EKEventStore.authorizationStatus(for: .event)
+
+            Self.logger.info("Calendar access request finished. Granted: \(granted, privacy: .public), status: \(String(describing: self.authorizationStatus), privacy: .public)")
+
+            guard granted, hasAccess else {
+                let message = messageAfterUnsuccessfulRequest(status: authorizationStatus)
+                accessErrorMessage = message
+
+                if authorizationStatus == .denied || authorizationStatus == .restricted {
+                    return .needsSettings(message)
+                }
+
+                return .unavailable(message)
+            }
+
+            accessErrorMessage = nil
+            loadCalendars()
+            reload()
+            return .granted
+        } catch {
+            authorizationStatus = EKEventStore.authorizationStatus(for: .event)
+            accessErrorMessage = calendarAccessMessage(for: error)
+            Self.logger.error("Calendar access request failed: \(error.localizedDescription, privacy: .public)")
+
+            if authorizationStatus == .denied || authorizationStatus == .restricted {
+                return .needsSettings(accessErrorMessage ?? settingsAccessMessage(for: authorizationStatus))
+            }
+
+            return .unavailable(accessErrorMessage ?? error.localizedDescription)
         }
     }
 
@@ -89,12 +164,24 @@ final class CalendarStore {
     func reload() {
         guard hasAccess else { return }
         let range = displayedMonth.monthGridRange
+        loadEvents(from: range.start, to: range.end)
+    }
+
+    /// Fetches events for a single day without changing the visible calendar month.
+    func reloadEvents(for day: Date) {
+        guard hasAccess else { return }
+        let dayStart = Calendar.current.startOfDay(for: day)
+        guard let dayEnd = Calendar.current.date(byAdding: .day, value: 1, to: dayStart) else { return }
+        loadEvents(from: dayStart, to: dayEnd)
+    }
+
+    private func loadEvents(from start: Date, to end: Date) {
         let active = calendars.filter { !hiddenCalendarIDs.contains($0.calendarIdentifier) }
         guard !active.isEmpty else { events = []; return }
 
         let predicate = eventStore.predicateForEvents(
-            withStart: range.start,
-            end: range.end,
+            withStart: start,
+            end: end,
             calendars: active
         )
         events = eventStore.events(matching: predicate)
@@ -109,7 +196,10 @@ final class CalendarStore {
                     sourceTitle: ekEvent.calendar.source.title,
                     colorHex: Self.hex(from: ekEvent.calendar.cgColor),
                     location: ekEvent.location,
-                    notes: ekEvent.notes
+                    notes: ekEvent.notes,
+                    source: Self.source(for: ekEvent.calendar.source.title),
+                    sourceId: ekEvent.eventIdentifier ?? ekEvent.calendarItemIdentifier,
+                    editable: ekEvent.calendar.allowsContentModifications
                 )
             }
             .sorted { $0.startDate < $1.startDate }
@@ -132,8 +222,14 @@ final class CalendarStore {
         let cal = Calendar.current
         var counts: [Date: Int] = [:]
         for event in events {
-            let day = cal.startOfDay(for: event.startDate)
-            counts[day, default: 0] += 1
+            var day = cal.startOfDay(for: event.startDate)
+            let lastDay = cal.startOfDay(for: event.endDate)
+
+            while day <= lastDay {
+                counts[day, default: 0] += 1
+                guard let nextDay = cal.date(byAdding: .day, value: 1, to: day) else { break }
+                day = nextDay
+            }
         }
         return counts
     }
@@ -184,10 +280,71 @@ final class CalendarStore {
         reload()
     }
 
-    func deleteEvent(id: String) {
-        guard let event = eventStore.event(withIdentifier: id) else { return }
-        try? eventStore.remove(event, span: .thisEvent)
+    func updateEvent(
+        id: String,
+        title: String,
+        start: Date,
+        end: Date,
+        isAllDay: Bool,
+        calendar: EKCalendar,
+        location: String?,
+        notes: String?,
+        reminder: ReminderOffset
+    ) throws {
+        guard let event = eventStore.event(withIdentifier: id) else {
+            Self.logger.error("Event update failed because EventKit could not resolve identifier: \(id, privacy: .public)")
+            throw CalendarStoreError.eventNotFound
+        }
+
+        guard event.calendar.allowsContentModifications, calendar.allowsContentModifications else {
+            Self.logger.warning("Event update blocked by read-only calendar. Event id: \(id, privacy: .public)")
+            throw CalendarStoreError.readOnlyCalendar
+        }
+
+        event.title = title
+        event.startDate = start
+        event.endDate = end
+        event.isAllDay = isAllDay
+        event.calendar = calendar
+        event.location = location
+        event.notes = notes
+
+        for alarm in event.alarms ?? [] {
+            event.removeAlarm(alarm)
+        }
+        if let interval = reminder.interval {
+            event.addAlarm(EKAlarm(relativeOffset: -interval))
+        }
+
+        try eventStore.save(event, span: .thisEvent)
         notifications.cancel(id: id)
+
+        if let interval = reminder.interval {
+            let fireDate = start.addingTimeInterval(-interval)
+            notifications.schedule(
+                id: event.eventIdentifier ?? id,
+                title: title,
+                body: reminderBody(for: reminder, start: start, isAllDay: isAllDay),
+                fireDate: fireDate
+            )
+        }
+
+        Self.logger.info("Event updated successfully. Event id: \(id, privacy: .public)")
+        reload()
+    }
+
+    func deleteEvent(id: String) throws {
+        guard let event = eventStore.event(withIdentifier: id) else {
+            Self.logger.error("Event delete failed because EventKit could not resolve identifier: \(id, privacy: .public)")
+            throw CalendarStoreError.eventNotFound
+        }
+        guard event.calendar.allowsContentModifications else {
+            Self.logger.warning("Event delete blocked by read-only calendar. Event id: \(id, privacy: .public)")
+            throw CalendarStoreError.readOnlyCalendar
+        }
+        try eventStore.remove(event, span: .thisEvent)
+        notifications.cancel(id: id)
+        Self.logger.info("Event deleted successfully. Event id: \(id, privacy: .public)")
         reload()
     }
 
@@ -198,6 +355,42 @@ final class CalendarStore {
         return "Coming up at \(formatter.string(from: start))"
     }
 
+    private func calendarAccessMessage(for error: Error) -> String {
+        let nsError = error as NSError
+
+        if nsError.domain == "EKErrorDomain" {
+            return "Cadence could not show the calendar permission prompt. Confirm the app includes the Full Calendar Access privacy description, then rebuild and try again."
+        }
+
+        return error.localizedDescription
+    }
+
+    private func messageAfterUnsuccessfulRequest(status: EKAuthorizationStatus) -> String {
+        switch status {
+        case .denied:
+            return settingsAccessMessage(for: status)
+        case .restricted:
+            return settingsAccessMessage(for: status)
+        case .writeOnly:
+            return "Cadence has write-only calendar access, but needs Full Access to show your existing events. Allow Full Access in Settings."
+        case .notDetermined:
+            return "Cadence could not show the calendar permission prompt. Confirm the app includes the Full Calendar Access privacy description, then rebuild and try again."
+        default:
+            return "Calendar access was not granted."
+        }
+    }
+
+    private func settingsAccessMessage(for status: EKAuthorizationStatus) -> String {
+        switch status {
+        case .restricted:
+            return "Calendar access is restricted on this device. Check Screen Time, device management, or parental controls."
+        case .writeOnly:
+            return "Cadence needs Full Calendar Access to show your existing events. Allow Full Access in Settings."
+        default:
+            return "Calendar access was not granted. Open Settings and allow Full Access for Cadence."
+        }
+    }
+
     private static func hex(from cgColor: CGColor?) -> UInt {
         guard let cgColor, let components = cgColor.components, components.count >= 3 else {
             return 0xF5B841
@@ -206,5 +399,9 @@ final class CalendarStore {
         let g = UInt(max(0, min(1, components[1])) * 255)
         let b = UInt(max(0, min(1, components[2])) * 255)
         return (r << 16) | (g << 8) | b
+    }
+
+    private static func source(for title: String) -> CalendarItemSource {
+        title.localizedCaseInsensitiveContains("google") ? .google : .apple
     }
 }

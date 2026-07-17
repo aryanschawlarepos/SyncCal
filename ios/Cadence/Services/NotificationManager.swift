@@ -8,6 +8,7 @@ import UserNotifications
 
 /// Schedules Cadence's branded local reminders for events created in the app.
 @Observable
+@MainActor
 final class NotificationManager {
     var isAuthorized = false
 

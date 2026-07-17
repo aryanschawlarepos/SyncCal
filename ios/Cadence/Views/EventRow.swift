@@ -23,11 +23,12 @@ struct EventRow: View {
                     .lineLimit(1)
 
                 HStack(spacing: 6) {
-                    Text(event.rangeLabel)
+                    Label(event.rangeLabel, systemImage: event.isAllDay ? "sun.max.fill" : "clock")
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(Theme.textSecondary)
+                        .labelStyle(.titleAndIcon)
                     if let location = event.location, !location.isEmpty {
-                        Text("· \(location)")
+                        Label(location, systemImage: "mappin.and.ellipse")
                             .font(.system(size: 13))
                             .foregroundStyle(Theme.textTertiary)
                             .lineLimit(1)
@@ -51,5 +52,8 @@ struct EventRow: View {
             RoundedRectangle(cornerRadius: 16)
                 .stroke(Theme.stroke, lineWidth: 1)
         )
+        .shadow(color: Theme.shadow, radius: 10, y: 6)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(event.title), \(event.rangeLabel), \(event.calendarTitle)")
     }
 }
