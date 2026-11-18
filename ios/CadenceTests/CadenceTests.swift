@@ -67,7 +67,10 @@ struct CadenceTests {
             sourceTitle: "Test source",
             colorHex: 0xF5B841,
             location: nil,
-            notes: nil
+            notes: nil,
+            source: .local,
+            sourceId: "test-source",
+            editable: true
         )
     }
 

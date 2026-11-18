@@ -14,7 +14,7 @@ enum PlannerTimeline {
     ) -> ClosedRange<Date> {
         let dayStart = calendar.startOfDay(for: day)
         let workdayStart = calendar.date(bySettingHour: 8, minute: 0, second: 0, of: dayStart)!
-        let workdayEnd = calendar.date(bySettingHour: 21, minute: 0, second: 0, of: dayStart)!
+        let workdayEnd = calendar.date(bySettingHour: 20, minute: 0, second: 0, of: dayStart)!
 
         let timedEvents = events.filter { !$0.isAllDay }
         let earliestStart = timedEvents.map(\.startDate).min() ?? workdayStart
