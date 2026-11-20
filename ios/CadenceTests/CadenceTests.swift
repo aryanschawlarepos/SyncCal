@@ -213,6 +213,24 @@ struct CadenceTests {
         #expect(lockScreenContent(name: "My Day", state: .ended, appearance: .standard) == nil)
     }
 
+    @Test func groupStoreWinsWhenItAlreadyExists() {
+        #expect(cadenceStoreRelocation(groupStoreReady: true, legacyStoreExists: true) == .useGroup)
+        #expect(cadenceStoreRelocation(groupStoreReady: true, legacyStoreExists: false) == .useGroup)
+    }
+
+    @Test func legacyStoreMovesOnlyWhenTheGroupStoreIsMissing() {
+        #expect(cadenceStoreRelocation(groupStoreReady: false, legacyStoreExists: true) == .moveLegacy)
+        #expect(cadenceStoreRelocation(groupStoreReady: false, legacyStoreExists: false) == .useGroup)
+    }
+
+    @Test func storeURLsUseTheSwiftDataDefaultName() {
+        let support = URL(fileURLWithPath: "/tmp/support")
+        let group = URL(fileURLWithPath: "/tmp/group")
+
+        #expect(legacyCadenceStoreURL(applicationSupport: support).lastPathComponent == "default.store")
+        #expect(cadenceGroupStoreURL(groupContainer: group).path.hasSuffix("/Library/Application Support/default.store"))
+    }
+
     private func date(hour: Int) -> Date {
         Calendar.current.date(
             bySettingHour: hour % 24,

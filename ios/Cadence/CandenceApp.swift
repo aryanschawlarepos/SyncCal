@@ -10,10 +10,18 @@ import SwiftUI
 
 @main
 struct CadenceApp: App {
+    private let container: ModelContainer = {
+        do {
+            return try makeCadenceContainer()
+        } catch {
+            fatalError("Could not open the Cadence store: \(error)")
+        }
+    }()
+
     var body: some Scene {
         WindowGroup {
             ContentView()
         }
-        .modelContainer(for: [CadenceTask.self, TaskList.self])
+        .modelContainer(container)
     }
 }
