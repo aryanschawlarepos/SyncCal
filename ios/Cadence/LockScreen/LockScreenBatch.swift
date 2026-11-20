@@ -79,7 +79,7 @@ func resolveLockScreenCard(
 
     let nextBatch = inScope
         .filter { !$0.completed }
-        .sorted { $0.createdAt > $1.createdAt }
+        .sorted(by: lockScreenNextBatchPrecedes)
         .prefix(lockScreenBatchLimit)
         .map(lockScreenRow)
 
@@ -176,6 +176,19 @@ private extension LockScreenScope {
         case .list(let listID):
             return task.listId == listID
         }
+    }
+}
+
+private func lockScreenNextBatchPrecedes(_ lhs: LockScreenSourceTask, _ rhs: LockScreenSourceTask) -> Bool {
+    switch (lhs.dueDate, rhs.dueDate) {
+    case let (left?, right?) where left != right:
+        return left < right
+    case (.some, nil):
+        return true
+    case (nil, .some):
+        return false
+    default:
+        return lhs.createdAt > rhs.createdAt
     }
 }
 

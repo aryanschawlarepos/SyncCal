@@ -100,6 +100,21 @@ struct CadenceTests {
         #expect(card == .showing(rows: [row("N2"), row("N1")], openCount: 2))
     }
 
+    @Test func nextBatchPutsEarlierDueDatesAheadOfLaterAndUndatedTasks() {
+        let list = UUID()
+        let laterDue = calendar.date(byAdding: .hour, value: 8, to: today)!
+        let tasks = [
+            source("Soon", due: today, list: list, createdHour: 1),
+            source("Later", due: laterDue, list: list, createdHour: 3),
+            source("Loose", list: list, createdHour: 5),
+            source("Newer", due: today, list: list, createdHour: 4)
+        ]
+
+        let card = resolveLockScreenCard(scope: .list(list), tasks: tasks, currentIDs: [], today: today, calendar: calendar)
+
+        #expect(card == .showing(rows: [row("Newer"), row("Soon"), row("Later")], openCount: 4))
+    }
+
     @Test func finishedBatchStaysAndDoesNotEndTheActivity() {
         let done = [source("Milk", due: today, completed: true), source("Call", due: today, completed: true)]
 
