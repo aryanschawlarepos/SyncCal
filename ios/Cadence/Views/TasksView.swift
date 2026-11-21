@@ -75,7 +75,8 @@ struct TasksView: View {
     @Query(sort: \TaskList.sortIndex) private var lists: [TaskList]
     @Query(sort: \CadenceTask.createdAt, order: .reverse) private var tasks: [CadenceTask]
 
-    @State private var showTaskEditor = false
+    @State private var showQuickAdd = false
+    @State private var quickAddTitle = ""
     @State private var showNewListAlert = false
     @State private var newListName = ""
     @State private var listToRename: TaskList?
@@ -116,10 +117,10 @@ struct TasksView: View {
             }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar(.hidden, for: .navigationBar)
-            .sheet(isPresented: $showTaskEditor) {
-                TaskEditorView(task: nil, preferredListId: lists.first?.id)
-                    .presentationDetents([.height(220)])
-                    .presentationDragIndicator(.visible)
+            .alert("New Task", isPresented: $showQuickAdd) {
+                TextField("Task title", text: $quickAddTitle)
+                Button("Cancel", role: .cancel) { quickAddTitle = "" }
+                Button("Add", action: addQuickTask)
             }
             .alert("New List", isPresented: $showNewListAlert) {
                 TextField("List name", text: $newListName)
@@ -345,7 +346,8 @@ struct TasksView: View {
 
     private var addButton: some View {
         Button {
-            showTaskEditor = true
+            quickAddTitle = ""
+            showQuickAdd = true
         } label: {
             Image(systemName: "plus")
                 .font(.system(size: 26, weight: .semibold))
@@ -354,10 +356,18 @@ struct TasksView: View {
                 .background(Theme.accentGradient, in: .circle)
                 .shadow(color: Theme.accent.opacity(0.45), radius: 18, y: 8)
         }
-        .buttonStyle(PressScaleButtonStyle())
+        .buttonStyle(.plain)
         .accessibilityLabel("Add task")
         .padding(.trailing, 22)
         .padding(.bottom, 28)
+    }
+
+    private func addQuickTask() {
+        let title = quickAddTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else { return }
+        modelContext.insert(CadenceTask(title: title, listId: lists.first?.id))
+        try? modelContext.save()
+        quickAddTitle = ""
     }
 
     private func color(for smartList: TaskSmartList) -> Color {

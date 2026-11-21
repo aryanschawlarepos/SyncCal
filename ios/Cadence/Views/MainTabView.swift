@@ -11,11 +11,6 @@ struct MainTabView: View {
     let store: CalendarStore
     let notifications: NotificationManager
 
-    @Query(sort: \CadenceTask.createdAt, order: .reverse) private var tasks: [CadenceTask]
-    @Query(sort: \TaskList.sortIndex) private var lists: [TaskList]
-    @AppStorage("lockScreenAppearance", store: UserDefaults(suiteName: CadenceAppGroup.identifier)!)
-    private var lockScreenAppearance = LockScreenAppearance.dark
-
     @State private var selection = Tab.calendar
 
     private enum Tab {
@@ -49,37 +44,41 @@ struct MainTabView: View {
                 .tag(Tab.tasks)
         }
         .tint(Theme.accent)
-        .task(id: lockScreenSyncToken) {
-            // Debounce so launch seeding and rapid edits don't stall the UI
-            // on ActivityKit updates for every intermediate @Query change.
-            try? await Task.sleep(for: .milliseconds(250))
-            guard !Task.isCancelled else { return }
-            await ListLiveActivityCenter.sync(
-                tasks: Array(tasks),
-                lists: Array(lists),
-                appearance: lockScreenAppearance
-            )
-        }
+        .background(LockScreenActivitySyncBridge())
+    }
+}
+
+/// Keeps Live Activity sync off the tab bar’s render path. Debounced updates
+/// run in this tiny host so opening menus and the + button stay instant.
+private struct LockScreenActivitySyncBridge: View {
+    @Query(sort: \CadenceTask.updatedAt, order: .reverse) private var tasks: [CadenceTask]
+    @Query(sort: \TaskList.sortIndex) private var lists: [TaskList]
+    @AppStorage("lockScreenAppearance", store: UserDefaults(suiteName: CadenceAppGroup.identifier)!)
+    private var lockScreenAppearance = LockScreenAppearance.dark
+
+    var body: some View {
+        Color.clear
+            .frame(width: 0, height: 0)
+            .accessibilityHidden(true)
+            .task(id: syncToken) {
+                try? await Task.sleep(for: .milliseconds(400))
+                guard !Task.isCancelled else { return }
+                await ListLiveActivityCenter.sync(
+                    tasks: Array(tasks),
+                    lists: Array(lists),
+                    appearance: lockScreenAppearance
+                )
+            }
     }
 
-    /// Change token for Live Activity sync — cheaper than a giant joined string.
-    private var lockScreenSyncToken: Int {
-        var hasher = Hasher()
-        hasher.combine(lockScreenAppearance)
-        hasher.combine(tasks.count)
-        hasher.combine(lists.count)
-        for task in tasks {
-            hasher.combine(task.id)
-            hasher.combine(task.title)
-            hasher.combine(task.completed)
-            hasher.combine(task.updatedAt.timeIntervalSince1970)
-            hasher.combine(task.dueDate?.timeIntervalSince1970)
-            hasher.combine(task.listId)
+    private var syncToken: String {
+        let newest = tasks.first.map {
+            "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970):\($0.title):\($0.completed)"
+        } ?? "none"
+        let completedCount = tasks.reduce(into: 0) { count, task in
+            if task.completed { count += 1 }
         }
-        for list in lists {
-            hasher.combine(list.id)
-            hasher.combine(list.name)
-        }
-        return hasher.finalize()
+        let listStamp = lists.map { "\($0.id.uuidString):\($0.name)" }.joined(separator: ",")
+        return "\(tasks.count)|\(completedCount)|\(newest)|\(listStamp)|\(lockScreenAppearance.rawValue)"
     }
 }

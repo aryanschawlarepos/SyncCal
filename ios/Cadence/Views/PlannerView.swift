@@ -17,7 +17,8 @@ struct PlannerView: View {
     @Query(sort: \TaskList.sortIndex) private var lists: [TaskList]
 
     @State private var showEditor = false
-    @State private var showTaskEditor = false
+    @State private var showQuickAdd = false
+    @State private var quickAddTitle = ""
     @State private var selectedEventStartDate: Date?
     @State private var taskToEdit: CadenceTask?
     @State private var taskToDirectEdit: CadenceTask?
@@ -61,10 +62,10 @@ struct PlannerView: View {
                 initialStartDate: selectedEventStartDate
             )
         }
-        .sheet(isPresented: $showTaskEditor) {
-            TaskEditorView(task: nil, preferredListId: lists.first?.id, preferredDueDate: today)
-                .presentationDetents([.height(220)])
-                .presentationDragIndicator(.visible)
+        .alert("New Task", isPresented: $showQuickAdd) {
+            TextField("Task title", text: $quickAddTitle)
+            Button("Cancel", role: .cancel) { quickAddTitle = "" }
+            Button("Add", action: addQuickTask)
         }
         .sheet(item: $taskToEdit) { task in
             TaskDetailView(task: task)
@@ -165,12 +166,11 @@ struct PlannerView: View {
                         .frame(width: 34, height: 34)
                         .contentShape(Circle())
                 }
-                .buttonStyle(PressScaleButtonStyle(scale: 0.9))
+                .buttonStyle(.plain)
                 .accessibilityLabel("Create")
 
                 Menu {
                     Button {
-                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
                         store.reloadEvents(for: today)
                     } label: {
                         Label("Refresh", systemImage: "arrow.clockwise")
@@ -182,7 +182,7 @@ struct PlannerView: View {
                         .frame(width: 34, height: 34)
                         .contentShape(Circle())
                 }
-                .buttonStyle(PressScaleButtonStyle(scale: 0.9))
+                .buttonStyle(.plain)
                 .accessibilityLabel("More")
             }
         }
@@ -500,26 +500,32 @@ struct PlannerView: View {
     }
 
     private func createTask() {
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        showTaskEditor = true
+        quickAddTitle = ""
+        showQuickAdd = true
     }
 
     private func createEvent(at startDate: Date?) {
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
         selectedEventStartDate = startDate
         showEditor = true
     }
 
-    private func createQuickTask() {
-        let task = CadenceTask(
-            title: "New Task",
-            dueDate: today,
-            listId: lists.first?.id
+    private func addQuickTask() {
+        let title = quickAddTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else { return }
+        modelContext.insert(
+            CadenceTask(
+                title: title,
+                dueDate: today,
+                listId: lists.first?.id
+            )
         )
-        modelContext.insert(task)
         try? modelContext.save()
-        UINotificationFeedbackGenerator().notificationOccurred(.success)
-        taskToDirectEdit = task
+        quickAddTitle = ""
+    }
+
+    private func createQuickTask() {
+        quickAddTitle = ""
+        showQuickAdd = true
     }
 
     private func delete(_ task: CadenceTask) {

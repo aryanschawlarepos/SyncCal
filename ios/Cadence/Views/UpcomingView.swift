@@ -16,7 +16,8 @@ struct UpcomingView: View {
     @Query(sort: \TaskList.sortIndex) private var lists: [TaskList]
 
     @State private var showEventEditor = false
-    @State private var showTaskEditor = false
+    @State private var showQuickAdd = false
+    @State private var quickAddTitle = ""
     @State private var eventToInspect: EventItem?
     @State private var eventToEdit: EventItem?
     @State private var eventPendingDelete: EventItem?
@@ -53,10 +54,10 @@ struct UpcomingView: View {
         .sheet(isPresented: $showEventEditor) {
             EventEditorView(store: store, notifications: notifications, initialDate: today)
         }
-        .sheet(isPresented: $showTaskEditor) {
-            TaskEditorView(task: nil, preferredListId: lists.first?.id, preferredDueDate: today)
-                .presentationDetents([.height(220)])
-                .presentationDragIndicator(.visible)
+        .alert("New Task", isPresented: $showQuickAdd) {
+            TextField("Task title", text: $quickAddTitle)
+            Button("Cancel", role: .cancel) { quickAddTitle = "" }
+            Button("Add", action: addQuickTask)
         }
         .sheet(item: $eventToInspect) { event in
             EventDetailView(
@@ -287,7 +288,7 @@ struct UpcomingView: View {
                 .background(Theme.accentGradient, in: .circle)
                 .shadow(color: Theme.accent.opacity(0.45), radius: 18, y: 8)
         }
-        .buttonStyle(PressScaleButtonStyle())
+        .buttonStyle(.plain)
         .accessibilityLabel("Add upcoming item")
         .padding(.trailing, 22)
         .padding(.bottom, 28)
@@ -422,13 +423,26 @@ struct UpcomingView: View {
     }
 
     private func createTask() {
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        showTaskEditor = true
+        quickAddTitle = ""
+        showQuickAdd = true
     }
 
     private func createEvent() {
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
         showEventEditor = true
+    }
+
+    private func addQuickTask() {
+        let title = quickAddTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else { return }
+        modelContext.insert(
+            CadenceTask(
+                title: title,
+                dueDate: today,
+                listId: lists.first?.id
+            )
+        )
+        try? modelContext.save()
+        quickAddTitle = ""
     }
 
     private func toggle(_ task: CadenceTask) {

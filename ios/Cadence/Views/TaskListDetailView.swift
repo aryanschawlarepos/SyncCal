@@ -16,10 +16,10 @@ struct TaskListDetailView: View {
     @Query(sort: \TaskList.sortIndex) private var lists: [TaskList]
 
     @State private var quickAddTitle = ""
+    @FocusState private var quickAddFocused: Bool
     @State private var taskToEdit: CadenceTask?
     @State private var taskToDirectEdit: CadenceTask?
     @State private var taskPendingDelete: CadenceTask?
-    @State private var showEditor = false
     @State private var lockScreenRunning = false
     @State private var lockScreenFailure: String?
 
@@ -61,11 +61,6 @@ struct TaskListDetailView: View {
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(Theme.background, for: .navigationBar)
-        .sheet(isPresented: $showEditor) {
-            TaskEditorView(task: nil, preferredListId: preferredListId)
-                .presentationDetents([.height(220)])
-                .presentationDragIndicator(.visible)
-        }
         .sheet(item: $taskToEdit) { task in
             TaskDetailView(task: task)
                 .presentationDetents([.medium, .large])
@@ -134,6 +129,7 @@ struct TaskListDetailView: View {
                 .foregroundStyle(Theme.accent)
 
             TextField("Add a task", text: $quickAddTitle)
+                .focused($quickAddFocused)
                 .font(.system(size: 16, weight: .semibold, design: .rounded))
                 .foregroundStyle(Theme.textPrimary)
                 .submitLabel(.done)
@@ -210,8 +206,7 @@ struct TaskListDetailView: View {
                 .frame(maxWidth: 280)
 
             Button {
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                showEditor = true
+                quickAddFocused = true
             } label: {
                 Label("Add Task", systemImage: "plus")
                     .font(.system(size: 15, weight: .bold, design: .rounded))
@@ -220,7 +215,7 @@ struct TaskListDetailView: View {
                     .padding(.vertical, 11)
                     .background(Theme.accentGradient, in: .capsule)
             }
-            .buttonStyle(PressScaleButtonStyle(scale: 0.94))
+            .buttonStyle(.plain)
             .padding(.top, 4)
 
             Spacer()
@@ -232,8 +227,7 @@ struct TaskListDetailView: View {
 
     private var addButton: some View {
         Button {
-            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            showEditor = true
+            quickAddFocused = true
         } label: {
             Image(systemName: "plus")
                 .font(.system(size: 26, weight: .semibold))
@@ -242,7 +236,7 @@ struct TaskListDetailView: View {
                 .background(Theme.accentGradient, in: .circle)
                 .shadow(color: Theme.accent.opacity(0.45), radius: 18, y: 8)
         }
-        .buttonStyle(PressScaleButtonStyle())
+        .buttonStyle(.plain)
         .accessibilityLabel("Add task")
         .padding(.trailing, 22)
         .padding(.bottom, 28)
