@@ -7,6 +7,7 @@
 
 import SwiftData
 import SwiftUI
+import UIKit
 
 @MainActor
 final class CadenceSharedStore: ObservableObject {
@@ -53,6 +54,9 @@ struct CadenceApp: App {
     @StateObject private var sharedStore: CadenceSharedStore
 
     init() {
+        CadenceAppLaunch.openURL = { url in
+            await UIApplication.shared.open(url)
+        }
         if let existing = CadenceAppLaunchStore.shared {
             _sharedStore = StateObject(wrappedValue: existing)
             return

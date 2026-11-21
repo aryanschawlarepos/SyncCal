@@ -8,6 +8,10 @@ import AppIntents
 import Foundation
 import SwiftData
 
+enum CadenceAppLaunch {
+    static var openURL: (@MainActor (URL) async -> Void)?
+}
+
 @MainActor
 func saveLockScreenTask(
     title: String,
@@ -100,40 +104,45 @@ struct AddLockScreenTaskIntent: LiveActivityIntent {
     @Parameter(title: "Title")
     var title: String?
 
-    // Success returns `.result()` and does not open a URL. A missing group store
-    // or a failed title request returns `.result(opensIntent:)`. `any IntentResult`
-    // is what lets those containers share one `perform()`. If `AppIntent.PerformResult`
-    // refuses the existential, this will not compile: the two result containers are
-    // different types, and `some IntentResult` cannot mix them.
-    func perform() async throws -> any IntentResult {
+    // Every path returns `.result()` only. Mixing `.result(opensIntent:)` fails to
+    // compile: those containers are different types, and `any IntentResult` is not a
+    // valid AppIntent.PerformResult. Open the add URL through CadenceAppLaunch instead.
+    func perform() async throws -> some IntentResult {
         let scope = await currentLockScreenAddScope()
         let provided: String
         do {
-            let value = try await $title.requestValue(IntentDialog("Task title"))
-            provided = value ?? ""
+            provided = try await $title.requestValue(IntentDialog("Task title"))
         } catch is CancellationError {
-            return .result() as any IntentResult
+            return .result()
         } catch {
             storeLockScreenFallbackScope(scope)
-            return .result(opensIntent: OpenURLIntent(CadenceAppGroup.addURL)) as any IntentResult
+            await openLockScreenAddURL()
+            return .result()
         }
 
         do {
             _ = try await saveLockScreenAdd(title: provided, scope: scope)
         } catch is LockScreenPinError {
-            return .result() as any IntentResult
+            return .result()
         } catch let error as CadenceStoreError {
             guard case .groupStoreMissing = error else {
-                return .result() as any IntentResult
+                return .result()
             }
             storeLockScreenFallbackScope(scope)
             if let title = normalizedLockScreenTitle(provided) {
                 storeLockScreenStashedTitle(title)
             }
-            return .result(opensIntent: OpenURLIntent(CadenceAppGroup.addURL)) as any IntentResult
+            await openLockScreenAddURL()
+            return .result()
         }
-        return .result() as any IntentResult
+        return .result()
     }
+}
+
+@MainActor
+private func openLockScreenAddURL() async {
+    guard let openURL = CadenceAppLaunch.openURL else { return }
+    await openURL(CadenceAppGroup.addURL)
 }
 
 struct CompleteLockScreenTaskIntent: LiveActivityIntent {
