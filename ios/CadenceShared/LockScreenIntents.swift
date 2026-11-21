@@ -7,6 +7,7 @@ import ActivityKit
 import AppIntents
 import Foundation
 import SwiftData
+import UIKit
 
 @MainActor
 func saveLockScreenTask(
@@ -100,7 +101,7 @@ struct AddLockScreenTaskIntent: AppIntent {
             provided = value ?? ""
         } catch {
             storeLockScreenFallbackScope(scope)
-            try await OpenURLIntent(target: CadenceAppGroup.addURL).perform()
+            await openLockScreenAddURL()
             return .result()
         }
 
@@ -152,6 +153,19 @@ private func currentLockScreenAddScope() -> LockScreenScope {
         return (scope: scope, pinnedAt: activity.attributes.pinnedAt)
     }
     return lockScreenAddDestination(running: running)
+}
+
+@MainActor
+private func openLockScreenAddURL() {
+    #if APPLICATION_EXTENSION
+    let selector = NSSelectorFromString("sharedApplication")
+    guard let method = class_getClassMethod(UIApplication.self, selector) else { return }
+    typealias SharedApplication = @convention(c) (AnyClass, Selector) -> UIApplication
+    let sharedApplication = unsafeBitCast(method_getImplementation(method), to: SharedApplication.self)
+    sharedApplication(UIApplication.self, selector).open(CadenceAppGroup.addURL)
+    #else
+    UIApplication.shared.open(CadenceAppGroup.addURL)
+    #endif
 }
 
 private func storeLockScreenFallbackScope(_ scope: LockScreenScope) {
