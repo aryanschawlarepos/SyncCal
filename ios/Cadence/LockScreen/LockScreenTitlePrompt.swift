@@ -67,7 +67,6 @@ struct LockScreenTitlePrompt: View {
         do {
             saved = try saveLockScreenTask(title: title, scope: scope, now: Date(), context: modelContext)
         } catch {
-            dismiss()
             return
         }
         guard saved else { return }

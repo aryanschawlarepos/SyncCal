@@ -77,8 +77,6 @@ struct ContentView: View {
     private func presentLockScreenAdd(scope: LockScreenScope) {
         lockScreenAddScope = scope
         showLockScreenAdd = true
-        UserDefaults(suiteName: CadenceAppGroup.identifier)?
-            .removeObject(forKey: CadenceAppGroup.fallbackScopeKey)
     }
 
     private func storedLockScreenAddScope() -> LockScreenScope? {
