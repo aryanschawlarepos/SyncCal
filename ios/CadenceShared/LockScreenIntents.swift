@@ -92,7 +92,7 @@ struct AddLockScreenTaskIntent: AppIntent {
     @Parameter(title: "Title")
     var title: String?
 
-    func perform() async throws -> some IntentResult {
+    func perform() async throws -> some IntentResult & OpensIntent {
         let scope = await currentLockScreenAddScope()
         let provided: String
         do {
@@ -100,11 +100,11 @@ struct AddLockScreenTaskIntent: AppIntent {
             provided = value ?? ""
         } catch {
             storeLockScreenFallbackScope(scope)
-            return .result(opensIntent: OpenURLIntent(target: CadenceAppGroup.addURL))
+            return .result(opensIntent: OpenLockScreenAddIntent())
         }
 
         _ = try await saveLockScreenAdd(title: provided, scope: scope)
-        return .result()
+        return .result(opensIntent: LockScreenAddFinishedIntent())
     }
 }
 
@@ -138,7 +138,17 @@ struct OpenLockScreenAddIntent: AppIntent {
     static var isDiscoverable: Bool { false }
 
     func perform() async throws -> some IntentResult & OpensIntent {
-        .result(opensIntent: OpenURLIntent(target: CadenceAppGroup.addURL))
+        .result(opensIntent: OpenURLIntent(CadenceAppGroup.addURL))
+    }
+}
+
+struct LockScreenAddFinishedIntent: AppIntent {
+    static var title: LocalizedStringResource = "Done"
+    static var openAppWhenRun = false
+    static var isDiscoverable = false
+
+    func perform() async throws -> some IntentResult {
+        .result()
     }
 }
 
