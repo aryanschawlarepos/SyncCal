@@ -12,7 +12,12 @@ struct LockScreenTitlePrompt: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @FocusState private var titleFocused: Bool
-    @State private var title = ""
+    @State private var title: String
+
+    init(scope: LockScreenScope, initialTitle: String = "") {
+        self.scope = scope
+        _title = State(initialValue: initialTitle)
+    }
 
     var body: some View {
         NavigationStack {
@@ -56,8 +61,9 @@ struct LockScreenTitlePrompt: View {
             }
         }
         .onAppear {
-            UserDefaults(suiteName: CadenceAppGroup.identifier)?
-                .removeObject(forKey: CadenceAppGroup.fallbackScopeKey)
+            let defaults = UserDefaults(suiteName: CadenceAppGroup.identifier)
+            defaults?.removeObject(forKey: CadenceAppGroup.fallbackScopeKey)
+            defaults?.removeObject(forKey: CadenceAppGroup.stashedTitleKey)
             titleFocused = true
         }
     }

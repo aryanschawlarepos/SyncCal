@@ -232,6 +232,11 @@ struct CadenceTests {
         #expect(cadenceStoreRelocation(groupStoreReady: false, legacyStoreExists: false) == .useGroup)
     }
 
+    @Test func extensionLeavesAMissingGroupStoreAlone() {
+        #expect(cadenceExtensionStoreAction(groupStoreExists: true) == .openExisting)
+        #expect(cadenceExtensionStoreAction(groupStoreExists: false) == .leaveMissing)
+    }
+
     @Test func storeURLsUseTheSwiftDataDefaultName() {
         let support = URL(fileURLWithPath: "/tmp/support")
         let group = URL(fileURLWithPath: "/tmp/group")

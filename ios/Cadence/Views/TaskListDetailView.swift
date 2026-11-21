@@ -11,6 +11,7 @@ struct TaskListDetailView: View {
 
     @Environment(\.modelContext) private var modelContext
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
     @Query(sort: \CadenceTask.createdAt, order: .reverse) private var tasks: [CadenceTask]
     @Query(sort: \TaskList.sortIndex) private var lists: [TaskList]
 
@@ -19,7 +20,7 @@ struct TaskListDetailView: View {
     @State private var taskToDirectEdit: CadenceTask?
     @State private var taskPendingDelete: CadenceTask?
     @State private var showEditor = false
-    @State private var lockScreenRevision = 0
+    @State private var lockScreenRunning = false
     @State private var lockScreenFailure: String?
 
     @AppStorage("lockScreenAppearance", store: UserDefaults(suiteName: CadenceAppGroup.identifier)!)
@@ -71,8 +72,13 @@ struct TaskListDetailView: View {
             TaskEditorView(task: task, preferredListId: task.listId ?? preferredListId)
                 .presentationDetents([.medium, .large])
         }
+        .onAppear(perform: refreshLockScreenLabel)
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
+            refreshLockScreenLabel()
+        }
         .onReceive(NotificationCenter.default.publisher(for: .cadenceLockScreenActivitiesChanged)) { _ in
-            lockScreenRevision += 1
+            refreshLockScreenLabel()
         }
         .alert(lockScreenFailure ?? "", isPresented: lockScreenFailureBinding) {
             Button("OK", role: .cancel) {}
@@ -255,19 +261,13 @@ struct TaskListDetailView: View {
         }
     }
 
-    private var lockScreenIsRunning: Bool {
-        _ = lockScreenRevision
-        guard let lockScreenScope else { return false }
-        return ListLiveActivityCenter.isRunning(lockScreenScope)
-    }
-
     private var lockScreenButton: some View {
         Button(action: toggleLockScreen) {
             HStack(spacing: 10) {
-                Image(systemName: lockScreenIsRunning ? "lock.open.fill" : "lock.fill")
+                Image(systemName: lockScreenRunning ? "lock.open.fill" : "lock.fill")
                     .font(.system(size: 15, weight: .semibold))
                     .accessibilityHidden(true)
-                Text(lockScreenIsRunning ? "Remove from Lock Screen" : "Show on Lock Screen")
+                Text(lockScreenRunning ? "Remove from Lock Screen" : "Show on Lock Screen")
                     .font(.system(size: 15, weight: .bold, design: .rounded))
                 Spacer()
             }
@@ -280,7 +280,7 @@ struct TaskListDetailView: View {
             )
         }
         .buttonStyle(PressScaleButtonStyle(scale: 0.98))
-        .accessibilityLabel(lockScreenIsRunning ? "Remove from Lock Screen" : "Show on Lock Screen")
+        .accessibilityLabel(lockScreenRunning ? "Remove from Lock Screen" : "Show on Lock Screen")
     }
 
     private var lockScreenFailureBinding: Binding<Bool> {
@@ -294,13 +294,23 @@ struct TaskListDetailView: View {
         )
     }
 
+    private func refreshLockScreenLabel() {
+        guard let lockScreenScope else {
+            lockScreenRunning = false
+            return
+        }
+        lockScreenRunning = ListLiveActivityCenter.isRunning(lockScreenScope)
+    }
+
     private func toggleLockScreen() {
         guard let lockScreenScope else { return }
+        let running = ListLiveActivityCenter.isRunning(lockScreenScope)
+        lockScreenRunning = running
         let appearance = lockScreenAppearance
         let name = scope.title
         let currentTasks = tasks
         Task {
-            if ListLiveActivityCenter.isRunning(lockScreenScope) {
+            if running {
                 await ListLiveActivityCenter.unpin(lockScreenScope)
             } else {
                 do {
@@ -316,7 +326,7 @@ struct TaskListDetailView: View {
                     lockScreenFailure = error.localizedDescription
                 }
             }
-            lockScreenRevision += 1
+            refreshLockScreenLabel()
         }
     }
 

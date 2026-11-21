@@ -10,15 +10,21 @@ struct ContentView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.scenePhase) private var scenePhase
 
-    @State private var notifications = NotificationManager()
+    @State private var notifications: NotificationManager
     @State private var store: CalendarStore
     @State private var showLockScreenAdd = false
     @State private var lockScreenAddScope = LockScreenScope.myDay
+    @State private var lockScreenAddTitle = ""
+    @State private var lockScreenResumeInFlight = false
+    @State private var lockScreenResumeAgain = false
 
-    init() {
+    var reloadSharedStore: @MainActor () async -> Void = {}
+
+    init(reloadSharedStore: @MainActor @escaping () async -> Void = {}) {
         let notifications = NotificationManager()
         _notifications = State(initialValue: notifications)
         _store = State(initialValue: CalendarStore(notifications: notifications))
+        self.reloadSharedStore = reloadSharedStore
     }
 
     var body: some View {
@@ -40,52 +46,52 @@ struct ContentView: View {
                 store.loadCalendars()
                 store.reload()
             }
-            presentStoredLockScreenAdd()
+            await resumeLockScreenAdd()
         }
         .onOpenURL { url in
-            presentLockScreenAdd(from: url)
+            guard url.scheme == CadenceAppGroup.addURL.scheme,
+                  url.host == CadenceAppGroup.addURL.host else {
+                return
+            }
+            Task { await resumeLockScreenAdd() }
         }
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }
-            presentStoredLockScreenAdd()
+            Task { await resumeLockScreenAdd() }
         }
         .sheet(isPresented: $showLockScreenAdd) {
-            LockScreenTitlePrompt(scope: lockScreenAddScope)
+            LockScreenTitlePrompt(scope: lockScreenAddScope, initialTitle: lockScreenAddTitle)
         }
     }
 
-    private func presentStoredLockScreenAdd() {
-        guard let scope = storedLockScreenAddScope() else { return }
-        presentLockScreenAdd(scope: scope)
+    @MainActor
+    private func resumeLockScreenAdd() async {
+        if lockScreenResumeInFlight {
+            lockScreenResumeAgain = true
+            return
+        }
+        lockScreenResumeInFlight = true
+        defer { lockScreenResumeInFlight = false }
+        repeat {
+            lockScreenResumeAgain = false
+            await reloadSharedStore()
+            guard let pending = takePendingLockScreenAdd() else { continue }
+            if let title = pending.title.flatMap(normalizedLockScreenTitle) {
+                let saved = await finishStashedLockScreenAdd(title: title, scope: pending.scope)
+                if saved {
+                    continue
+                }
+                presentLockScreenAdd(scope: pending.scope, title: title)
+                continue
+            }
+            presentLockScreenAdd(scope: pending.scope)
+        } while lockScreenResumeAgain
     }
 
-    private func presentLockScreenAdd(from url: URL) {
-        guard url.scheme != "cadence-internal" else { return }
-        guard url.scheme == CadenceAppGroup.addURL.scheme,
-              url.host == CadenceAppGroup.addURL.host else {
-            return
-        }
-        if let scope = storedLockScreenAddScope() {
-            presentLockScreenAdd(scope: scope)
-            return
-        }
-        if showLockScreenAdd {
-            return
-        }
-        presentLockScreenAdd(scope: .myDay)
-    }
-
-    private func presentLockScreenAdd(scope: LockScreenScope) {
+    private func presentLockScreenAdd(scope: LockScreenScope, title: String = "") {
         lockScreenAddScope = scope
+        lockScreenAddTitle = title
         showLockScreenAdd = true
-    }
-
-    private func storedLockScreenAddScope() -> LockScreenScope? {
-        guard let raw = UserDefaults(suiteName: CadenceAppGroup.identifier)?
-            .string(forKey: CadenceAppGroup.fallbackScopeKey) else {
-            return nil
-        }
-        return LockScreenScope.scope(id: raw) ?? .myDay
     }
 }
 

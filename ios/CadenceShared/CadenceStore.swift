@@ -9,6 +9,7 @@ import SwiftData
 enum CadenceAppGroup {
     static let identifier = "group.com.rork.Cadence"
     static let fallbackScopeKey = "lockScreenAddFallbackScope"
+    static let stashedTitleKey = "lockScreenAddStashedTitle"
     static let addURL = URL(string: "cadence://lock-screen-add")!
 }
 
@@ -19,6 +20,16 @@ enum CadenceStoreRelocation: Equatable {
 
 enum CadenceStoreError: Error {
     case appGroupUnavailable
+    case groupStoreMissing
+}
+
+enum CadenceExtensionStoreAction: Equatable {
+    case openExisting
+    case leaveMissing
+}
+
+func cadenceExtensionStoreAction(groupStoreExists: Bool) -> CadenceExtensionStoreAction {
+    groupStoreExists ? .openExisting : .leaveMissing
 }
 
 func cadenceStoreRelocation(groupStoreReady: Bool, legacyStoreExists: Bool) -> CadenceStoreRelocation {
@@ -73,6 +84,26 @@ func makeCadenceContainer() throws -> ModelContainer {
     return try ModelContainer(for: CadenceTask.self, TaskList.self, configurations: configuration)
 }
 
+func makeCadenceContainerForExtension() throws -> ModelContainer {
+    guard let groupContainer = FileManager.default.containerURL(
+        forSecurityApplicationGroupIdentifier: CadenceAppGroup.identifier
+    ) else {
+        throw CadenceStoreError.appGroupUnavailable
+    }
+
+    let groupStore = cadenceGroupStoreURL(groupContainer: groupContainer)
+    let action = cadenceExtensionStoreAction(
+        groupStoreExists: FileManager.default.fileExists(atPath: groupStore.path)
+    )
+    // ModelContainer creates default.store. Missing means the app has not migrated yet.
+    guard action == .openExisting else {
+        throw CadenceStoreError.groupStoreMissing
+    }
+
+    let configuration = ModelConfiguration(url: groupStore)
+    return try ModelContainer(for: CadenceTask.self, TaskList.self, configurations: configuration)
+}
+
 @MainActor
 enum CadenceSharedContainer {
     static var container: ModelContainer?
@@ -81,7 +112,9 @@ enum CadenceSharedContainer {
         if let container {
             return container.mainContext
         }
-        return try makeCadenceContainer().mainContext
+        let opened = try makeCadenceContainerForExtension()
+        container = opened
+        return opened.mainContext
     }
 }
 
