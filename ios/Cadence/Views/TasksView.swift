@@ -117,11 +117,7 @@ struct TasksView: View {
             }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar(.hidden, for: .navigationBar)
-            .alert("New Task", isPresented: $showQuickAdd) {
-                TextField("Task title", text: $quickAddTitle)
-                Button("Cancel", role: .cancel) { quickAddTitle = "" }
-                Button("Add", action: addQuickTask)
-            }
+            .quickTaskComposer(isPresented: $showQuickAdd, title: $quickAddTitle, onAdd: addQuickTask)
             .alert("New List", isPresented: $showNewListAlert) {
                 TextField("List name", text: $newListName)
                 Button("Cancel", role: .cancel) { newListName = "" }
@@ -346,8 +342,12 @@ struct TasksView: View {
 
     private var addButton: some View {
         Button {
-            quickAddTitle = ""
-            showQuickAdd = true
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                quickAddTitle = ""
+                showQuickAdd = true
+            }
         } label: {
             Image(systemName: "plus")
                 .font(.system(size: 26, weight: .semibold))
@@ -367,7 +367,6 @@ struct TasksView: View {
         guard !title.isEmpty else { return }
         modelContext.insert(CadenceTask(title: title, listId: lists.first?.id))
         try? modelContext.save()
-        quickAddTitle = ""
     }
 
     private func color(for smartList: TaskSmartList) -> Color {

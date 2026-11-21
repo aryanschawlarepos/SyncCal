@@ -54,11 +54,7 @@ struct UpcomingView: View {
         .sheet(isPresented: $showEventEditor) {
             EventEditorView(store: store, notifications: notifications, initialDate: today)
         }
-        .alert("New Task", isPresented: $showQuickAdd) {
-            TextField("Task title", text: $quickAddTitle)
-            Button("Cancel", role: .cancel) { quickAddTitle = "" }
-            Button("Add", action: addQuickTask)
-        }
+        .quickTaskComposer(isPresented: $showQuickAdd, title: $quickAddTitle, onAdd: addQuickTask)
         .sheet(item: $eventToInspect) { event in
             EventDetailView(
                 event: event,
@@ -423,8 +419,12 @@ struct UpcomingView: View {
     }
 
     private func createTask() {
-        quickAddTitle = ""
-        showQuickAdd = true
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            quickAddTitle = ""
+            showQuickAdd = true
+        }
     }
 
     private func createEvent() {
@@ -442,7 +442,6 @@ struct UpcomingView: View {
             )
         )
         try? modelContext.save()
-        quickAddTitle = ""
     }
 
     private func toggle(_ task: CadenceTask) {

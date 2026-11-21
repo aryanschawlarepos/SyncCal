@@ -62,11 +62,7 @@ struct PlannerView: View {
                 initialStartDate: selectedEventStartDate
             )
         }
-        .alert("New Task", isPresented: $showQuickAdd) {
-            TextField("Task title", text: $quickAddTitle)
-            Button("Cancel", role: .cancel) { quickAddTitle = "" }
-            Button("Add", action: addQuickTask)
-        }
+        .quickTaskComposer(isPresented: $showQuickAdd, title: $quickAddTitle, onAdd: addQuickTask)
         .sheet(item: $taskToEdit) { task in
             TaskDetailView(task: task)
                 .presentationDetents([.medium, .large])
@@ -500,8 +496,7 @@ struct PlannerView: View {
     }
 
     private func createTask() {
-        quickAddTitle = ""
-        showQuickAdd = true
+        presentQuickAdd()
     }
 
     private func createEvent(at startDate: Date?) {
@@ -520,12 +515,19 @@ struct PlannerView: View {
             )
         )
         try? modelContext.save()
-        quickAddTitle = ""
     }
 
     private func createQuickTask() {
-        quickAddTitle = ""
-        showQuickAdd = true
+        presentQuickAdd()
+    }
+
+    private func presentQuickAdd() {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            quickAddTitle = ""
+            showQuickAdd = true
+        }
     }
 
     private func delete(_ task: CadenceTask) {
