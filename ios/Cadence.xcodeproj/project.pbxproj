@@ -63,6 +63,13 @@
 			);
 			target = 105FC5792E9EAD3100EA8BCF /* Cadence */;
 		};
+		105FC5CF2E9EAD3200EA8BCF /* Exceptions for "CadenceLockScreen" folder in "CadenceLockScreen" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 105FC5C82E9EAD3200EA8BCF /* CadenceLockScreen */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -81,6 +88,9 @@
 		};
 		105FC5C52E9EAD3200EA8BCF /* CadenceLockScreen */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				105FC5CF2E9EAD3200EA8BCF /* Exceptions for "CadenceLockScreen" folder in "CadenceLockScreen" target */,
+			);
 			path = CadenceLockScreen;
 			sourceTree = "<group>";
 		};
@@ -650,7 +660,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 8BDJWZ67Y7;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSExtensionPointIdentifier = "com.apple.widgetkit-extension";
+				INFOPLIST_FILE = CadenceLockScreen/Info.plist;
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -677,7 +687,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 8BDJWZ67Y7;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSExtensionPointIdentifier = "com.apple.widgetkit-extension";
+				INFOPLIST_FILE = CadenceLockScreen/Info.plist;
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
 				LD_RUNPATH_SEARCH_PATHS = (
