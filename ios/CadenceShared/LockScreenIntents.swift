@@ -138,7 +138,7 @@ struct OpenLockScreenAddIntent: AppIntent {
     static var isDiscoverable: Bool { false }
 
     func perform() async throws -> some IntentResult & OpensIntent {
-        .result(opensIntent: OpenURLIntent(CadenceAppGroup.addURL))
+        .result(opensIntent: OpenURLIntent(target: CadenceAppGroup.addURL))
     }
 }
 
