@@ -49,29 +49,37 @@ struct MainTabView: View {
                 .tag(Tab.tasks)
         }
         .tint(Theme.accent)
-        .task(id: lockScreenSyncID) {
+        .task(id: lockScreenSyncToken) {
+            // Debounce so launch seeding and rapid edits don't stall the UI
+            // on ActivityKit updates for every intermediate @Query change.
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled else { return }
             await ListLiveActivityCenter.sync(
-                tasks: tasks,
-                lists: lists,
+                tasks: Array(tasks),
+                lists: Array(lists),
                 appearance: lockScreenAppearance
             )
         }
     }
 
-    private var lockScreenSyncID: String {
-        let taskPart = tasks.map { task in
-            [
-                task.id.uuidString,
-                task.title,
-                task.completed ? "1" : "0",
-                task.dueDate.map { String($0.timeIntervalSince1970) } ?? "",
-                task.listId?.uuidString ?? "",
-                String(task.createdAt.timeIntervalSince1970)
-            ].joined(separator: "\u{1f}")
-        }.joined(separator: "\u{1e}")
-        let listPart = lists.map { list in
-            [list.id.uuidString, list.name].joined(separator: "\u{1f}")
-        }.joined(separator: "\u{1e}")
-        return taskPart + "\u{1d}" + listPart + "\u{1d}" + lockScreenAppearance.rawValue
+    /// Change token for Live Activity sync — cheaper than a giant joined string.
+    private var lockScreenSyncToken: Int {
+        var hasher = Hasher()
+        hasher.combine(lockScreenAppearance)
+        hasher.combine(tasks.count)
+        hasher.combine(lists.count)
+        for task in tasks {
+            hasher.combine(task.id)
+            hasher.combine(task.title)
+            hasher.combine(task.completed)
+            hasher.combine(task.updatedAt.timeIntervalSince1970)
+            hasher.combine(task.dueDate?.timeIntervalSince1970)
+            hasher.combine(task.listId)
+        }
+        for list in lists {
+            hasher.combine(list.id)
+            hasher.combine(list.name)
+        }
+        return hasher.finalize()
     }
 }

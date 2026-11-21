@@ -63,6 +63,8 @@ struct TaskListDetailView: View {
         .toolbarBackground(Theme.background, for: .navigationBar)
         .sheet(isPresented: $showEditor) {
             TaskEditorView(task: nil, preferredListId: preferredListId)
+                .presentationDetents([.height(220)])
+                .presentationDragIndicator(.visible)
         }
         .sheet(item: $taskToEdit) { task in
             TaskDetailView(task: task)

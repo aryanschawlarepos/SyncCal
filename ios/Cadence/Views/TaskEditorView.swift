@@ -15,19 +15,20 @@ struct TaskEditorView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \TaskList.sortIndex) private var lists: [TaskList]
 
+    @FocusState private var titleFocused: Bool
     @State private var title: String
-    @State private var notes: String
     @State private var hasDueDate: Bool
     @State private var dueDate: Date
     @State private var priority: TaskPriority
     @State private var selectedListId: UUID?
+
+    private var isNewTask: Bool { task == nil }
 
     init(task: CadenceTask?, preferredListId: UUID?, preferredDueDate: Date? = nil) {
         self.task = task
         self.preferredListId = preferredListId
         self.preferredDueDate = preferredDueDate
         _title = State(initialValue: task?.title ?? "")
-        _notes = State(initialValue: task?.notes ?? "")
         _hasDueDate = State(initialValue: task?.dueDate != nil || preferredDueDate != nil)
         _dueDate = State(initialValue: task?.dueDate ?? preferredDueDate ?? Date())
         _priority = State(initialValue: task?.priority ?? .none)
@@ -36,20 +37,15 @@ struct TaskEditorView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: 16) {
-                    titleCard
-                    scheduleCard
-                    listCard
-                    notesCard
+            Group {
+                if isNewTask {
+                    newTaskForm
+                } else {
+                    editTaskForm
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 10)
-                .padding(.bottom, 32)
             }
             .background(Theme.background)
-            .scrollDismissesKeyboard(.interactively)
-            .navigationTitle(task == nil ? "New Task" : "Edit Task")
+            .navigationTitle(isNewTask ? "New Task" : "Edit Task")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(Theme.background, for: .navigationBar)
             .toolbar {
@@ -59,7 +55,7 @@ struct TaskEditorView: View {
                 }
 
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(task == nil ? "Add" : "Save") {
+                    Button(isNewTask ? "Add" : "Save") {
                         save()
                     }
                     .font(.body.weight(.semibold))
@@ -69,16 +65,46 @@ struct TaskEditorView: View {
             }
             .onAppear {
                 if selectedListId == nil {
-                    selectedListId = lists.first?.id
+                    selectedListId = preferredListId ?? lists.first?.id
                 }
+                titleFocused = true
             }
         }
     }
 
-    private var titleCard: some View {
+    private var newTaskForm: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            titleField
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 10)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var editTaskForm: some View {
+        ScrollView {
+            VStack(spacing: 16) {
+                titleField
+                scheduleCard
+                listCard
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+            .padding(.bottom, 32)
+        }
+        .scrollDismissesKeyboard(.interactively)
+    }
+
+    private var titleField: some View {
         TextField("", text: $title, prompt: Text("Task title").foregroundStyle(Theme.textTertiary))
+            .focused($titleFocused)
             .font(.system(size: 21, weight: .semibold, design: .rounded))
             .foregroundStyle(Theme.textPrimary)
+            .submitLabel(.done)
+            .onSubmit {
+                if canSave { save() }
+            }
             .padding(18)
             .background(Theme.surface, in: .rect(cornerRadius: 16))
             .overlay(
@@ -136,20 +162,6 @@ struct TaskEditorView: View {
         }
     }
 
-    private var notesCard: some View {
-        TaskEditorCard {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: "text.alignleft")
-                    .foregroundStyle(Theme.textTertiary)
-                    .padding(.top, 2)
-
-                TextField("", text: $notes, prompt: Text("Notes").foregroundStyle(Theme.textTertiary), axis: .vertical)
-                    .foregroundStyle(Theme.textPrimary)
-                    .lineLimit(4 ... 8)
-            }
-        }
-    }
-
     private var canSave: Bool {
         !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
@@ -160,7 +172,6 @@ struct TaskEditorView: View {
 
         if let task {
             task.title = trimmedTitle
-            task.notes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
             task.dueDate = hasDueDate ? Calendar.current.startOfDay(for: dueDate) : nil
             task.priority = priority
             task.listId = selectedListId
@@ -169,10 +180,8 @@ struct TaskEditorView: View {
             modelContext.insert(
                 CadenceTask(
                     title: trimmedTitle,
-                    notes: notes.trimmingCharacters(in: .whitespacesAndNewlines),
-                    dueDate: hasDueDate ? Calendar.current.startOfDay(for: dueDate) : nil,
-                    priority: priority,
-                    listId: selectedListId
+                    dueDate: preferredDueDate.map { Calendar.current.startOfDay(for: $0) },
+                    listId: preferredListId ?? selectedListId
                 )
             )
         }

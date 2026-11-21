@@ -118,6 +118,8 @@ struct TasksView: View {
             .toolbar(.hidden, for: .navigationBar)
             .sheet(isPresented: $showTaskEditor) {
                 TaskEditorView(task: nil, preferredListId: lists.first?.id)
+                    .presentationDetents([.height(220)])
+                    .presentationDragIndicator(.visible)
             }
             .alert("New List", isPresented: $showNewListAlert) {
                 TextField("List name", text: $newListName)
@@ -134,6 +136,7 @@ struct TasksView: View {
                     .disabled(renameListName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             .task {
+                await Task.yield()
                 TaskSeedService.seedDefaultListsIfNeeded(in: modelContext)
             }
         }
@@ -342,7 +345,6 @@ struct TasksView: View {
 
     private var addButton: some View {
         Button {
-            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
             showTaskEditor = true
         } label: {
             Image(systemName: "plus")

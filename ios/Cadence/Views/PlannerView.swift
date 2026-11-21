@@ -63,6 +63,8 @@ struct PlannerView: View {
         }
         .sheet(isPresented: $showTaskEditor) {
             TaskEditorView(task: nil, preferredListId: lists.first?.id, preferredDueDate: today)
+                .presentationDetents([.height(220)])
+                .presentationDragIndicator(.visible)
         }
         .sheet(item: $taskToEdit) { task in
             TaskDetailView(task: task)
