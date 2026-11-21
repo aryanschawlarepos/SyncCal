@@ -6,7 +6,7 @@
 import SwiftData
 import SwiftUI
 
-enum TaskSmartList: String, CaseIterable, Identifiable {
+enum TaskSmartList: String, CaseIterable, Identifiable, Hashable {
     case myDay
     case upcoming
     case all
@@ -51,7 +51,7 @@ enum TaskSmartList: String, CaseIterable, Identifiable {
     }
 }
 
-enum TaskListScope: Equatable {
+enum TaskListScope: Equatable, Hashable {
     case smart(TaskSmartList)
     case custom(UUID, String)
 
@@ -73,17 +73,156 @@ enum TaskListScope: Equatable {
 struct TasksView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \TaskList.sortIndex) private var lists: [TaskList]
-    @Query(sort: \CadenceTask.createdAt, order: .reverse) private var tasks: [CadenceTask]
 
     @State private var showQuickAdd = false
     @State private var quickAddTitle = ""
-    @State private var showNewListAlert = false
+    @State private var showNewListPrompt = false
     @State private var newListName = ""
-    @State private var listToRename: TaskList?
+    @State private var showRenamePrompt = false
     @State private var renameListName = ""
+    @State private var listToRename: TaskList?
+
+    var body: some View {
+        NavigationStack {
+            ZStack(alignment: .bottomTrailing) {
+                // Dashboard is a separate view so FAB / prompt state
+                // does not rebuild every list card on each tap.
+                TasksDashboard(
+                    onCreateList: presentNewList,
+                    onRenameList: beginRename
+                )
+
+                addButton
+                    .zIndex(1)
+
+                if showQuickAdd {
+                    QuickTaskComposer(
+                        isPresented: $showQuickAdd,
+                        title: $quickAddTitle,
+                        onAdd: addQuickTask
+                    )
+                    .zIndex(2)
+                }
+
+                if showNewListPrompt {
+                    TextPromptComposer(
+                        title: "New List",
+                        placeholder: "List name",
+                        confirmTitle: "Create",
+                        isPresented: $showNewListPrompt,
+                        text: $newListName,
+                        onConfirm: createList
+                    )
+                    .zIndex(2)
+                }
+
+                if showRenamePrompt {
+                    TextPromptComposer(
+                        title: "Rename List",
+                        placeholder: "List name",
+                        confirmTitle: "Save",
+                        isPresented: $showRenamePrompt,
+                        text: $renameListName,
+                        onConfirm: renameList
+                    )
+                    .zIndex(2)
+                }
+            }
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar(.hidden, for: .navigationBar)
+            .navigationDestination(for: TaskListScope.self) { scope in
+                TaskListDetailView(scope: scope)
+            }
+            .onChange(of: showRenamePrompt) { _, isPresented in
+                if !isPresented {
+                    listToRename = nil
+                }
+            }
+        }
+    }
+
+    private var addButton: some View {
+        Button(action: presentQuickAdd) {
+            Image(systemName: "plus")
+                .font(.system(size: 26, weight: .semibold))
+                .foregroundStyle(Theme.onAccent)
+                .frame(width: 62, height: 62)
+                .background(Theme.accentGradient, in: .circle)
+                .shadow(color: Theme.accent.opacity(0.45), radius: 18, y: 8)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Add task")
+        .padding(.trailing, 22)
+        .padding(.bottom, 28)
+    }
+
+    private func presentQuickAdd() {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            quickAddTitle = ""
+            showQuickAdd = true
+        }
+    }
+
+    private func presentNewList() {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            newListName = ""
+            showNewListPrompt = true
+        }
+    }
+
+    private func beginRename(_ list: TaskList) {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            listToRename = list
+            renameListName = list.name
+            showRenamePrompt = true
+        }
+    }
+
+    private func addQuickTask() {
+        let title = quickAddTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else { return }
+        modelContext.insert(CadenceTask(title: title, listId: lists.first?.id))
+        try? modelContext.save()
+    }
+
+    private func createList() {
+        let trimmed = newListName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        modelContext.insert(TaskList(name: trimmed, sortIndex: lists.count))
+        try? modelContext.save()
+        newListName = ""
+    }
+
+    private func renameList() {
+        guard let listToRename else { return }
+        let trimmed = renameListName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        listToRename.name = trimmed
+        listToRename.updatedAt = Date()
+        try? modelContext.save()
+        self.listToRename = nil
+        renameListName = ""
+    }
+}
+
+/// Isolated so prompt / FAB state in `TasksView` does not redraw every card.
+private struct TasksDashboard: View {
+    @Environment(\.modelContext) private var modelContext
+    @Query(sort: \TaskList.sortIndex) private var lists: [TaskList]
+    @Query(sort: \CadenceTask.createdAt, order: .reverse) private var tasks: [CadenceTask]
 
     @AppStorage("lockScreenAppearance", store: UserDefaults(suiteName: CadenceAppGroup.identifier)!)
     private var lockScreenAppearance = LockScreenAppearance.dark
+
+    var onCreateList: () -> Void
+    var onRenameList: (TaskList) -> Void
 
     private var today: Date {
         Calendar.current.startOfDay(for: Date())
@@ -96,46 +235,25 @@ struct TasksView: View {
     var body: some View {
         let dashboardSummary = summary
 
-        NavigationStack {
-            ZStack(alignment: .bottomTrailing) {
-                Theme.background.ignoresSafeArea()
-                Theme.glow.ignoresSafeArea()
+        ZStack {
+            Theme.background.ignoresSafeArea()
+            Theme.glow.ignoresSafeArea()
 
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 22) {
-                        header(summary: dashboardSummary)
-                        lockScreenAppearancePicker
-                        smartLists(summary: dashboardSummary)
-                        customLists(summary: dashboardSummary)
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 8)
-                    .padding(.bottom, 112)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    header(summary: dashboardSummary)
+                    lockScreenAppearancePicker
+                    smartLists(summary: dashboardSummary)
+                    customLists(summary: dashboardSummary)
                 }
-
-                addButton
+                .padding(.horizontal, 20)
+                .padding(.top, 8)
+                .padding(.bottom, 112)
             }
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar(.hidden, for: .navigationBar)
-            .quickTaskComposer(isPresented: $showQuickAdd, title: $quickAddTitle, onAdd: addQuickTask)
-            .alert("New List", isPresented: $showNewListAlert) {
-                TextField("List name", text: $newListName)
-                Button("Cancel", role: .cancel) { newListName = "" }
-                Button("Create") { createList() }
-                    .disabled(newListName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            } message: {
-                Text("Create a focused place for related tasks.")
-            }
-            .alert("Rename List", isPresented: renameAlertBinding) {
-                TextField("List name", text: $renameListName)
-                Button("Cancel", role: .cancel) { clearRenameState() }
-                Button("Save") { renameList() }
-                    .disabled(renameListName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }
-            .task {
-                await Task.yield()
-                TaskSeedService.seedDefaultListsIfNeeded(in: modelContext)
-            }
+        }
+        .task {
+            await Task.yield()
+            TaskSeedService.seedDefaultListsIfNeeded(in: modelContext)
         }
     }
 
@@ -148,7 +266,6 @@ struct TasksView: View {
             Text("\(summary.openCount) open • \(summary.completedCount) completed")
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
                 .foregroundStyle(Theme.accent)
-                .contentTransition(.numericText())
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -167,24 +284,27 @@ struct TasksView: View {
             .pickerStyle(.menu)
             .tint(Theme.textPrimary)
         }
-        .onChange(of: lockScreenAppearance) { _, appearance in
-            Task {
-                await ListLiveActivityCenter.sync(tasks: tasks, lists: lists, appearance: appearance)
+    }
+
+    private func smartLists(summary: TaskDashboardSummary) -> some View {
+        // Only four tiles — avoid LazyVGrid hit-testing quirks inside ScrollView.
+        Grid(horizontalSpacing: 12, verticalSpacing: 12) {
+            GridRow {
+                smartLink(.myDay, count: summary.smartCounts[.myDay, default: 0])
+                smartLink(.upcoming, count: summary.smartCounts[.upcoming, default: 0])
+            }
+            GridRow {
+                smartLink(.all, count: summary.smartCounts[.all, default: 0])
+                smartLink(.completed, count: summary.smartCounts[.completed, default: 0])
             }
         }
     }
 
-    private func smartLists(summary: TaskDashboardSummary) -> some View {
-        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-            ForEach(TaskSmartList.allCases) { smartList in
-                NavigationLink {
-                    TaskListDetailView(scope: .smart(smartList))
-                } label: {
-                    smartListCard(smartList, count: summary.smartCounts[smartList, default: 0])
-                }
-                .buttonStyle(PressScaleButtonStyle(scale: 0.97))
-            }
+    private func smartLink(_ smartList: TaskSmartList, count: Int) -> some View {
+        NavigationLink(value: TaskListScope.smart(smartList)) {
+            smartListCard(smartList, count: count)
         }
+        .buttonStyle(.plain)
     }
 
     private func smartListCard(_ smartList: TaskSmartList, count: Int) -> some View {
@@ -201,7 +321,6 @@ struct TasksView: View {
                 Text("\(count)")
                     .font(.system(size: 22, weight: .bold, design: .rounded))
                     .foregroundStyle(Theme.textPrimary)
-                    .contentTransition(.numericText())
             }
 
             Text(smartList.title)
@@ -209,12 +328,13 @@ struct TasksView: View {
                 .foregroundStyle(Theme.textPrimary)
         }
         .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         .background(Theme.surfaceGradient, in: .rect(cornerRadius: 18))
         .overlay(
             RoundedRectangle(cornerRadius: 18)
                 .stroke(Theme.strokeSoft, lineWidth: 1)
         )
+        .contentShape(.rect(cornerRadius: 18))
     }
 
     private func customLists(summary: TaskDashboardSummary) -> some View {
@@ -227,17 +347,15 @@ struct TasksView: View {
 
                 Spacer()
 
-                Button {
-                    newListName = ""
-                    showNewListAlert = true
-                } label: {
+                Button(action: onCreateList) {
                     Image(systemName: "plus")
                         .font(.system(size: 14, weight: .bold))
                         .foregroundStyle(Theme.accent)
                         .frame(width: 30, height: 30)
                         .background(Theme.accentSoft, in: .circle)
+                        .contentShape(Circle())
                 }
-                .buttonStyle(PressScaleButtonStyle(scale: 0.9))
+                .buttonStyle(.plain)
                 .accessibilityLabel("Create list")
             }
 
@@ -246,15 +364,13 @@ struct TasksView: View {
             } else {
                 VStack(spacing: 8) {
                     ForEach(lists) { list in
-                        NavigationLink {
-                            TaskListDetailView(scope: .custom(list.id, list.name))
-                        } label: {
+                        NavigationLink(value: TaskListScope.custom(list.id, list.name)) {
                             customListRow(list, count: summary.openCountsByListId[list.id, default: 0])
                         }
-                        .buttonStyle(PressScaleButtonStyle(scale: 0.98))
+                        .buttonStyle(.plain)
                         .contextMenu {
                             Button {
-                                beginRename(list)
+                                onRenameList(list)
                             } label: {
                                 Label("Rename", systemImage: "pencil")
                             }
@@ -313,6 +429,7 @@ struct TasksView: View {
             RoundedRectangle(cornerRadius: 16)
                 .stroke(Theme.strokeSoft, lineWidth: 1)
         )
+        .contentShape(.rect(cornerRadius: 16))
     }
 
     private var emptyLists: some View {
@@ -325,48 +442,17 @@ struct TasksView: View {
                 .font(.system(size: 17, weight: .bold, design: .rounded))
                 .foregroundStyle(Theme.textPrimary)
 
-            Button("New List") {
-                showNewListAlert = true
-            }
-            .font(.system(size: 15, weight: .bold, design: .rounded))
-            .foregroundStyle(Theme.onAccent)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .background(Theme.accentGradient, in: .capsule)
-            .buttonStyle(PressScaleButtonStyle(scale: 0.94))
+            Button("New List", action: onCreateList)
+                .font(.system(size: 15, weight: .bold, design: .rounded))
+                .foregroundStyle(Theme.onAccent)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(Theme.accentGradient, in: .capsule)
+                .buttonStyle(.plain)
         }
         .frame(maxWidth: .infinity)
         .padding(22)
         .background(Theme.surface, in: .rect(cornerRadius: 18))
-    }
-
-    private var addButton: some View {
-        Button {
-            var transaction = Transaction()
-            transaction.disablesAnimations = true
-            withTransaction(transaction) {
-                quickAddTitle = ""
-                showQuickAdd = true
-            }
-        } label: {
-            Image(systemName: "plus")
-                .font(.system(size: 26, weight: .semibold))
-                .foregroundStyle(Theme.onAccent)
-                .frame(width: 62, height: 62)
-                .background(Theme.accentGradient, in: .circle)
-                .shadow(color: Theme.accent.opacity(0.45), radius: 18, y: 8)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Add task")
-        .padding(.trailing, 22)
-        .padding(.bottom, 28)
-    }
-
-    private func addQuickTask() {
-        let title = quickAddTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !title.isEmpty else { return }
-        modelContext.insert(CadenceTask(title: title, listId: lists.first?.id))
-        try? modelContext.save()
     }
 
     private func color(for smartList: TaskSmartList) -> Color {
@@ -376,45 +462,6 @@ struct TasksView: View {
         case .all: return Color(hex: 0xB6A7FF)
         case .completed: return Color(hex: 0x7BD88F)
         }
-    }
-
-    private func createList() {
-        let trimmed = newListName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        modelContext.insert(TaskList(name: trimmed, sortIndex: lists.count))
-        try? modelContext.save()
-        newListName = ""
-    }
-
-    private func beginRename(_ list: TaskList) {
-        listToRename = list
-        renameListName = list.name
-    }
-
-    private func renameList() {
-        guard let listToRename else { return }
-        let trimmed = renameListName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        listToRename.name = trimmed
-        listToRename.updatedAt = Date()
-        try? modelContext.save()
-        clearRenameState()
-    }
-
-    private func clearRenameState() {
-        listToRename = nil
-        renameListName = ""
-    }
-
-    private var renameAlertBinding: Binding<Bool> {
-        Binding(
-            get: { listToRename != nil },
-            set: { isPresented in
-                if !isPresented {
-                    clearRenameState()
-                }
-            }
-        )
     }
 
     private func deleteList(_ list: TaskList) {
@@ -432,7 +479,7 @@ struct TasksView: View {
         let newIndex = currentIndex + direction
         guard lists.indices.contains(newIndex) else { return }
 
-        var reordered = lists
+        var reordered = Array(lists)
         reordered.swapAt(currentIndex, newIndex)
 
         for (index, list) in reordered.enumerated() {
