@@ -59,10 +59,7 @@ func completeLockScreenTask(id: UUID, context: ModelContext) throws -> Bool {
     guard let task = try context.fetch(descriptor).first else {
         return false
     }
-    guard let completed = lockScreenWriteCompletion(isCompleted: task.completed) else {
-        return false
-    }
-    task.completed = completed
+    task.completed = lockScreenWriteCompletion(isCompleted: task.completed)
     task.updatedAt = Date()
     try context.save()
     return true

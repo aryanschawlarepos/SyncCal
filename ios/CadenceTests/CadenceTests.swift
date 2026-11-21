@@ -191,9 +191,9 @@ struct CadenceTests {
         #expect(lockScreenAddDestination(running: [(.list(older), today), (.myDay, today)]) == .myDay)
     }
 
-    @Test func struckThroughCircleDoesNotReopen() {
+    @Test func circleTogglesCompletion() {
         #expect(lockScreenWriteCompletion(isCompleted: false) == true)
-        #expect(lockScreenWriteCompletion(isCompleted: true) == nil)
+        #expect(lockScreenWriteCompletion(isCompleted: true) == false)
     }
 
     @Test func pinErrorPrefersADisabledSystemOverAnEmptyList() {
@@ -320,14 +320,15 @@ struct CadenceTests {
         #expect(task?.dueDate == nil)
     }
 
-    @Test @MainActor func completingATaskOnceMarksItDone() throws {
+    @Test @MainActor func completingATaskTogglesDoneAndOpen() throws {
         let context = try makeMemoryContext()
         _ = try saveLockScreenTask(title: "Milk", scope: .myDay, now: today, context: context)
         let id = try context.fetch(FetchDescriptor<CadenceTask>()).first!.id
 
         #expect(try completeLockScreenTask(id: id, context: context) == true)
-        #expect(try completeLockScreenTask(id: id, context: context) == false)
         #expect(try context.fetch(FetchDescriptor<CadenceTask>()).first?.completed == true)
+        #expect(try completeLockScreenTask(id: id, context: context) == true)
+        #expect(try context.fetch(FetchDescriptor<CadenceTask>()).first?.completed == false)
     }
 
     @MainActor

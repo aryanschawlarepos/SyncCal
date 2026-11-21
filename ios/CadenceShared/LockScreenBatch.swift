@@ -120,8 +120,8 @@ func normalizedLockScreenTitle(_ text: String) -> String? {
     return trimmed.isEmpty ? nil : trimmed
 }
 
-func lockScreenWriteCompletion(isCompleted: Bool) -> Bool? {
-    isCompleted ? nil : true
+func lockScreenWriteCompletion(isCompleted: Bool) -> Bool {
+    !isCompleted
 }
 
 enum LockScreenPinError: Error, Equatable {

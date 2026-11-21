@@ -74,8 +74,11 @@ struct ContentView: View {
         defer { lockScreenResumeInFlight = false }
         repeat {
             lockScreenResumeAgain = false
-            await reloadSharedStore()
+            // Only reload when a lock-screen add is waiting. Reloading on every
+            // foreground swaps the ModelContainer and tears down open sheets
+            // like New Task.
             guard let pending = takePendingLockScreenAdd() else { continue }
+            await reloadSharedStore()
             if let title = pending.title.flatMap(normalizedLockScreenTitle) {
                 let saved = await finishStashedLockScreenAdd(title: title, scope: pending.scope)
                 if saved {
