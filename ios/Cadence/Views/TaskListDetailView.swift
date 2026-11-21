@@ -24,7 +24,7 @@ struct TaskListDetailView: View {
     @State private var lockScreenFailure: String?
 
     @AppStorage("lockScreenAppearance", store: UserDefaults(suiteName: CadenceAppGroup.identifier)!)
-    private var lockScreenAppearance = LockScreenAppearance.standard
+    private var lockScreenAppearance = LockScreenAppearance.dark
 
     private var today: Date {
         Calendar.current.startOfDay(for: Date())

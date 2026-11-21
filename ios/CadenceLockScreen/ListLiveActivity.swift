@@ -16,7 +16,7 @@ struct ListLiveActivity: Widget {
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.bottom) {
-                    ListActivityRows(rows: context.state.rows)
+                    ListActivityRows(rows: context.state.rows, appearance: .dark)
                 }
             } compactLeading: {
                 Text(context.state.name)
@@ -30,21 +30,32 @@ struct ListLiveActivity: Widget {
 }
 
 private enum LockScreenPalette {
-    static let standardBackground = Color(red: 32.0 / 255.0, green: 32.0 / 255.0, blue: 42.0 / 255.0)
+    static let darkBackground = Color(red: 32.0 / 255.0, green: 32.0 / 255.0, blue: 42.0 / 255.0)
+    static let lightBackground = Color(red: 245.0 / 255.0, green: 245.0 / 255.0, blue: 247.0 / 255.0)
+    static let lightForeground = Color(red: 28.0 / 255.0, green: 28.0 / 255.0, blue: 30.0 / 255.0)
     static let completed = Color(red: 138.0 / 255.0, green: 215.0 / 255.0, blue: 193.0 / 255.0)
     /// Matches Yike’s lock-screen task title: New York / system serif, bold, ~17pt.
     static let titleFont = Font.system(size: 17, weight: .semibold, design: .serif)
+
+    static func foreground(for appearance: LockScreenAppearance) -> Color {
+        switch appearance {
+        case .light:
+            lightForeground
+        case .dark, .transparent:
+            .white
+        }
+    }
 }
 
 private struct ListActivityLockScreen: View {
     let state: ListActivityAttributes.ContentState
 
     var body: some View {
-        ListActivityRows(rows: state.rows)
+        ListActivityRows(rows: state.rows, appearance: state.appearance)
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .foregroundStyle(.white)
+            .foregroundStyle(LockScreenPalette.foreground(for: state.appearance))
             .modifier(LockScreenActivityChrome(appearance: state.appearance))
     }
 }
@@ -57,10 +68,15 @@ private struct LockScreenActivityChrome: ViewModifier {
 
     func body(content: Content) -> some View {
         switch appearance {
-        case .standard:
+        case .light:
             content
-                .containerBackground(LockScreenPalette.standardBackground, for: .widget)
-                .activityBackgroundTint(LockScreenPalette.standardBackground)
+                .containerBackground(LockScreenPalette.lightBackground, for: .widget)
+                .activityBackgroundTint(LockScreenPalette.lightBackground)
+                .activitySystemActionForegroundColor(LockScreenPalette.lightForeground)
+        case .dark:
+            content
+                .containerBackground(LockScreenPalette.darkBackground, for: .widget)
+                .activityBackgroundTint(LockScreenPalette.darkBackground)
                 .activitySystemActionForegroundColor(.white)
         case .transparent:
             content
@@ -73,15 +89,17 @@ private struct LockScreenActivityChrome: ViewModifier {
 
 private struct ListActivityRows: View {
     let rows: [LockScreenTaskRow]
+    let appearance: LockScreenAppearance
 
     var body: some View {
+        let ink = LockScreenPalette.foreground(for: appearance)
         VStack(alignment: .leading, spacing: 10) {
             ForEach(rows) { row in
                 Button(intent: CompleteLockScreenTaskIntent(taskID: row.id.uuidString)) {
                     HStack(alignment: .center, spacing: 10) {
                         Image(systemName: row.completed ? "checkmark.circle.fill" : "circle")
                             .font(.system(size: 18, weight: .regular))
-                            .foregroundStyle(row.completed ? LockScreenPalette.completed : Color.white)
+                            .foregroundStyle(row.completed ? LockScreenPalette.completed : ink)
                         Text(row.title)
                             .font(LockScreenPalette.titleFont)
                             .strikethrough(row.completed)

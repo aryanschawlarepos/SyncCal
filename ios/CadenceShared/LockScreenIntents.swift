@@ -235,7 +235,9 @@ func finishStashedLockScreenAdd(title: String, scope: LockScreenScope) async -> 
 
 func storedLockScreenAppearance() -> LockScreenAppearance {
     let raw = UserDefaults(suiteName: CadenceAppGroup.identifier)?.string(forKey: "lockScreenAppearance")
-    return raw.flatMap(LockScreenAppearance.init(rawValue:)) ?? .standard
+    // Older builds stored "standard"; treat that as dark.
+    if raw == "standard" { return .dark }
+    return raw.flatMap(LockScreenAppearance.init(rawValue:)) ?? .dark
 }
 
 @MainActor

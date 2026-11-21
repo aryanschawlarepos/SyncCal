@@ -33,7 +33,8 @@ enum LockScreenScope: Hashable, Codable, Equatable {
 }
 
 enum LockScreenAppearance: String, Codable, Hashable, CaseIterable {
-    case standard
+    case light
+    case dark
     case transparent
 }
 

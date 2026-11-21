@@ -82,7 +82,7 @@ struct TasksView: View {
     @State private var renameListName = ""
 
     @AppStorage("lockScreenAppearance", store: UserDefaults(suiteName: CadenceAppGroup.identifier)!)
-    private var lockScreenAppearance = LockScreenAppearance.standard
+    private var lockScreenAppearance = LockScreenAppearance.dark
 
     private var today: Date {
         Calendar.current.startOfDay(for: Date())
@@ -158,13 +158,14 @@ struct TasksView: View {
             Text("Lock Screen")
                 .font(.system(size: 13, weight: .bold, design: .rounded))
                 .foregroundStyle(Theme.textTertiary)
-                .accessibilityHidden(true)
 
-            Picker("Lock Screen", selection: $lockScreenAppearance) {
-                Text("Standard").tag(LockScreenAppearance.standard)
+            Picker("Appearance", selection: $lockScreenAppearance) {
+                Text("Light").tag(LockScreenAppearance.light)
+                Text("Dark").tag(LockScreenAppearance.dark)
                 Text("Transparent").tag(LockScreenAppearance.transparent)
             }
-            .pickerStyle(.segmented)
+            .pickerStyle(.menu)
+            .tint(Theme.textPrimary)
         }
         .onChange(of: lockScreenAppearance) { _, appearance in
             Task {

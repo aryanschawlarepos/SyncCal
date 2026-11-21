@@ -211,7 +211,7 @@ struct CadenceTests {
         #expect(content?.openCount == 8)
         #expect(content?.rows == [row("Milk")])
         #expect(content?.appearance == .transparent)
-        #expect(lockScreenContent(name: "My Day", state: .ended, appearance: .standard) == nil)
+        #expect(lockScreenContent(name: "My Day", state: .ended, appearance: .dark) == nil)
     }
 
     @Test func displayNameIsMyDayOrTheCustomList() {

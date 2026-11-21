@@ -14,7 +14,7 @@ struct MainTabView: View {
     @Query(sort: \CadenceTask.createdAt, order: .reverse) private var tasks: [CadenceTask]
     @Query(sort: \TaskList.sortIndex) private var lists: [TaskList]
     @AppStorage("lockScreenAppearance", store: UserDefaults(suiteName: CadenceAppGroup.identifier)!)
-    private var lockScreenAppearance = LockScreenAppearance.standard
+    private var lockScreenAppearance = LockScreenAppearance.dark
 
     @State private var selection = Tab.calendar
 
