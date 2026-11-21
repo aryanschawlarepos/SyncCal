@@ -81,6 +81,9 @@ struct TasksView: View {
     @State private var listToRename: TaskList?
     @State private var renameListName = ""
 
+    @AppStorage("lockScreenAppearance", store: UserDefaults(suiteName: CadenceAppGroup.identifier)!)
+    private var lockScreenAppearance = LockScreenAppearance.standard
+
     private var today: Date {
         Calendar.current.startOfDay(for: Date())
     }
@@ -100,6 +103,7 @@ struct TasksView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 22) {
                         header(summary: dashboardSummary)
+                        lockScreenAppearancePicker
                         smartLists(summary: dashboardSummary)
                         customLists(summary: dashboardSummary)
                     }
@@ -147,6 +151,26 @@ struct TasksView: View {
                 .contentTransition(.numericText())
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var lockScreenAppearancePicker: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Lock Screen")
+                .font(.system(size: 13, weight: .bold, design: .rounded))
+                .foregroundStyle(Theme.textTertiary)
+                .accessibilityHidden(true)
+
+            Picker("Lock Screen", selection: $lockScreenAppearance) {
+                Text("Standard").tag(LockScreenAppearance.standard)
+                Text("Transparent").tag(LockScreenAppearance.transparent)
+            }
+            .pickerStyle(.segmented)
+        }
+        .onChange(of: lockScreenAppearance) { _, appearance in
+            Task {
+                await ListLiveActivityCenter.sync(tasks: tasks, lists: lists, appearance: appearance)
+            }
+        }
     }
 
     private func smartLists(summary: TaskDashboardSummary) -> some View {

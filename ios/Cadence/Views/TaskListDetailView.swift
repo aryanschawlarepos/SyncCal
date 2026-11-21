@@ -19,6 +19,11 @@ struct TaskListDetailView: View {
     @State private var taskToDirectEdit: CadenceTask?
     @State private var taskPendingDelete: CadenceTask?
     @State private var showEditor = false
+    @State private var lockScreenRevision = 0
+    @State private var lockScreenFailure: String?
+
+    @AppStorage("lockScreenAppearance", store: UserDefaults(suiteName: CadenceAppGroup.identifier)!)
+    private var lockScreenAppearance = LockScreenAppearance.standard
 
     private var today: Date {
         Calendar.current.startOfDay(for: Date())
@@ -37,6 +42,12 @@ struct TaskListDetailView: View {
 
             VStack(spacing: 0) {
                 header(snapshot: listSnapshot)
+
+                if lockScreenScope != nil {
+                    lockScreenButton
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 14)
+                }
 
                 quickAddBar
                     .padding(.horizontal, 16)
@@ -59,6 +70,12 @@ struct TaskListDetailView: View {
         .sheet(item: $taskToDirectEdit) { task in
             TaskEditorView(task: task, preferredListId: task.listId ?? preferredListId)
                 .presentationDetents([.medium, .large])
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .cadenceLockScreenActivitiesChanged)) { _ in
+            lockScreenRevision += 1
+        }
+        .alert(lockScreenFailure ?? "", isPresented: lockScreenFailureBinding) {
+            Button("OK", role: .cancel) {}
         }
         .confirmationDialog("Delete Task?", isPresented: taskDeleteDialogBinding) {
             if let taskPendingDelete {
@@ -225,6 +242,93 @@ struct TaskListDetailView: View {
 
     private var canQuickAdd: Bool {
         !quickAddTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var lockScreenScope: LockScreenScope? {
+        switch scope {
+        case .smart(.myDay):
+            return .myDay
+        case .custom(let listID, _):
+            return .list(listID)
+        case .smart:
+            return nil
+        }
+    }
+
+    private var lockScreenIsRunning: Bool {
+        _ = lockScreenRevision
+        guard let lockScreenScope else { return false }
+        return ListLiveActivityCenter.isRunning(lockScreenScope)
+    }
+
+    private var lockScreenButton: some View {
+        Button(action: toggleLockScreen) {
+            HStack(spacing: 10) {
+                Image(systemName: lockScreenIsRunning ? "lock.open.fill" : "lock.fill")
+                    .font(.system(size: 15, weight: .semibold))
+                    .accessibilityHidden(true)
+                Text(lockScreenIsRunning ? "Remove from Lock Screen" : "Show on Lock Screen")
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                Spacer()
+            }
+            .foregroundStyle(Theme.accent)
+            .padding(14)
+            .background(Theme.surface, in: .rect(cornerRadius: 18))
+            .overlay(
+                RoundedRectangle(cornerRadius: 18)
+                    .stroke(Theme.strokeSoft, lineWidth: 1)
+            )
+        }
+        .buttonStyle(PressScaleButtonStyle(scale: 0.98))
+        .accessibilityLabel(lockScreenIsRunning ? "Remove from Lock Screen" : "Show on Lock Screen")
+    }
+
+    private var lockScreenFailureBinding: Binding<Bool> {
+        Binding(
+            get: { lockScreenFailure != nil },
+            set: { isPresented in
+                if !isPresented {
+                    lockScreenFailure = nil
+                }
+            }
+        )
+    }
+
+    private func toggleLockScreen() {
+        guard let lockScreenScope else { return }
+        let appearance = lockScreenAppearance
+        let name = scope.title
+        let currentTasks = tasks
+        Task {
+            if ListLiveActivityCenter.isRunning(lockScreenScope) {
+                await ListLiveActivityCenter.unpin(lockScreenScope)
+            } else {
+                do {
+                    try await ListLiveActivityCenter.pin(
+                        scope: lockScreenScope,
+                        name: name,
+                        tasks: currentTasks,
+                        appearance: appearance
+                    )
+                } catch let error as LockScreenPinError {
+                    lockScreenFailure = lockScreenFailureMessage(for: error)
+                } catch {
+                    lockScreenFailure = error.localizedDescription
+                }
+            }
+            lockScreenRevision += 1
+        }
+    }
+
+    private func lockScreenFailureMessage(for error: LockScreenPinError) -> String {
+        switch error {
+        case .empty:
+            return "Nothing to show on the Lock Screen."
+        case .disabled:
+            return "Live Activities are turned off."
+        case .system(let message):
+            return message
+        }
     }
 
     private var preferredListId: UUID? {

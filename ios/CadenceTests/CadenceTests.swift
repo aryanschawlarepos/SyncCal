@@ -213,6 +213,14 @@ struct CadenceTests {
         #expect(lockScreenContent(name: "My Day", state: .ended, appearance: .standard) == nil)
     }
 
+    @Test func displayNameIsMyDayOrTheCustomList() {
+        let list = UUID()
+
+        #expect(lockScreenDisplayName(scope: .myDay, listNames: [:]) == "My Day")
+        #expect(lockScreenDisplayName(scope: .list(list), listNames: [list: "Home"]) == "Home")
+        #expect(lockScreenDisplayName(scope: .list(list), listNames: [:]) == nil)
+    }
+
     @Test func groupStoreWinsWhenItAlreadyExists() {
         #expect(cadenceStoreRelocation(groupStoreReady: true, legacyStoreExists: true) == .useGroup)
         #expect(cadenceStoreRelocation(groupStoreReady: true, legacyStoreExists: false) == .useGroup)

@@ -3,12 +3,18 @@
 //  Cadence
 //
 
+import SwiftData
 import SwiftUI
 
 /// Shared top-level navigation for the authorized app experience.
 struct MainTabView: View {
     let store: CalendarStore
     let notifications: NotificationManager
+
+    @Query(sort: \CadenceTask.createdAt, order: .reverse) private var tasks: [CadenceTask]
+    @Query(sort: \TaskList.sortIndex) private var lists: [TaskList]
+    @AppStorage("lockScreenAppearance", store: UserDefaults(suiteName: CadenceAppGroup.identifier)!)
+    private var lockScreenAppearance = LockScreenAppearance.standard
 
     @State private var selection = Tab.calendar
 
@@ -43,5 +49,29 @@ struct MainTabView: View {
                 .tag(Tab.tasks)
         }
         .tint(Theme.accent)
+        .task(id: lockScreenSyncID) {
+            await ListLiveActivityCenter.sync(
+                tasks: tasks,
+                lists: lists,
+                appearance: lockScreenAppearance
+            )
+        }
+    }
+
+    private var lockScreenSyncID: String {
+        let taskPart = tasks.map { task in
+            [
+                task.id.uuidString,
+                task.title,
+                task.completed ? "1" : "0",
+                task.dueDate.map { String($0.timeIntervalSince1970) } ?? "",
+                task.listId?.uuidString ?? "",
+                String(task.createdAt.timeIntervalSince1970)
+            ].joined(separator: "\u{1f}")
+        }.joined(separator: "\u{1e}")
+        let listPart = lists.map { list in
+            [list.id.uuidString, list.name].joined(separator: "\u{1f}")
+        }.joined(separator: "\u{1e}")
+        return taskPart + "\u{1d}" + listPart + "\u{1d}" + lockScreenAppearance.rawValue
     }
 }

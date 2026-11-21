@@ -123,7 +123,7 @@ func lockScreenWriteCompletion(isCompleted: Bool) -> Bool? {
     isCompleted ? nil : true
 }
 
-enum LockScreenPinError: Equatable {
+enum LockScreenPinError: Error, Equatable {
     case empty
     case disabled
     case system(String)
@@ -165,6 +165,15 @@ func lockScreenContent(
         rows: rows,
         appearance: appearance
     )
+}
+
+func lockScreenDisplayName(scope: LockScreenScope, listNames: [UUID: String]) -> String? {
+    switch scope {
+    case .myDay:
+        return "My Day"
+    case .list(let listID):
+        return listNames[listID]
+    }
 }
 
 private extension LockScreenScope {
