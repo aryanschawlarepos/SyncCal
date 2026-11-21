@@ -7,7 +7,6 @@ import ActivityKit
 import AppIntents
 import Foundation
 import SwiftData
-import UIKit
 
 @MainActor
 func saveLockScreenTask(
@@ -93,7 +92,7 @@ struct AddLockScreenTaskIntent: AppIntent {
     @Parameter(title: "Title")
     var title: String?
 
-    func perform() async throws -> some IntentResult {
+    func perform() async throws -> some IntentResult & OpensIntent {
         let scope = await currentLockScreenAddScope()
         let provided: String
         do {
@@ -101,12 +100,11 @@ struct AddLockScreenTaskIntent: AppIntent {
             provided = value ?? ""
         } catch {
             storeLockScreenFallbackScope(scope)
-            await openLockScreenAddURL()
-            return .result()
+            return .result(opensIntent: LockScreenAddFollowUpIntent(prompt: true))
         }
 
         _ = try await saveLockScreenAdd(title: provided, scope: scope)
-        return .result()
+        return .result(opensIntent: LockScreenAddFollowUpIntent(prompt: false))
     }
 }
 
@@ -144,6 +142,30 @@ struct OpenLockScreenAddIntent: AppIntent {
     }
 }
 
+struct LockScreenAddFollowUpIntent: AppIntent {
+    static var title: LocalizedStringResource = "Add Task"
+    static var openAppWhenRun = false
+    static var isDiscoverable = false
+
+    @Parameter(title: "Prompt")
+    var prompt: Bool
+
+    init() {
+        prompt = false
+    }
+
+    init(prompt: Bool) {
+        self.prompt = prompt
+    }
+
+    func perform() async throws -> some IntentResult & OpensIntent {
+        let url = prompt
+            ? CadenceAppGroup.addURL
+            : URL(string: "cadence-internal://lock-screen-add-finished")!
+        return .result(opensIntent: OpenURLIntent(url))
+    }
+}
+
 @MainActor
 private func currentLockScreenAddScope() -> LockScreenScope {
     let running: [(scope: LockScreenScope, pinnedAt: Date)] = Activity<ListActivityAttributes>.activities.compactMap { activity in
@@ -153,19 +175,6 @@ private func currentLockScreenAddScope() -> LockScreenScope {
         return (scope: scope, pinnedAt: activity.attributes.pinnedAt)
     }
     return lockScreenAddDestination(running: running)
-}
-
-@MainActor
-private func openLockScreenAddURL() {
-    #if APPLICATION_EXTENSION
-    let selector = NSSelectorFromString("sharedApplication")
-    guard let method = class_getClassMethod(UIApplication.self, selector) else { return }
-    typealias SharedApplication = @convention(c) (AnyClass, Selector) -> UIApplication
-    let sharedApplication = unsafeBitCast(method_getImplementation(method), to: SharedApplication.self)
-    sharedApplication(UIApplication.self, selector).open(CadenceAppGroup.addURL)
-    #else
-    UIApplication.shared.open(CadenceAppGroup.addURL)
-    #endif
 }
 
 private func storeLockScreenFallbackScope(_ scope: LockScreenScope) {

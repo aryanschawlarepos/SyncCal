@@ -60,6 +60,7 @@ struct ContentView: View {
     }
 
     private func presentLockScreenAdd(from url: URL) {
+        guard url.scheme != "cadence-internal" else { return }
         guard url.scheme == CadenceAppGroup.addURL.scheme,
               url.host == CadenceAppGroup.addURL.host else {
             return
