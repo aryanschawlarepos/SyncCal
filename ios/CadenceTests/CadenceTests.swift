@@ -231,6 +231,47 @@ struct CadenceTests {
         #expect(cadenceGroupStoreURL(groupContainer: group).path.hasSuffix("/Library/Application Support/default.store"))
     }
 
+    @Test func successfulMoveLeavesTheStoreAndWALAtTheDestination() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cadence-store-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let support = root.appendingPathComponent("support", isDirectory: true)
+        let group = root.appendingPathComponent("group", isDirectory: true)
+        let legacy = legacyCadenceStoreURL(applicationSupport: support)
+        let destination = cadenceGroupStoreURL(groupContainer: group)
+        let destinationDirectory = destination.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: destinationDirectory, withIntermediateDirectories: true)
+
+        let sourceWAL = support.appendingPathComponent("default.store-wal")
+        let destinationWAL = destinationDirectory.appendingPathComponent("default.store-wal")
+        try Data("store".utf8).write(to: legacy)
+        try Data("wal".utf8).write(to: sourceWAL)
+        try Data("orphan".utf8).write(to: destinationWAL)
+
+        try moveLegacyCadenceStore(from: legacy, to: destination)
+
+        let movedStore = try Data(contentsOf: destination)
+        let movedWAL = try Data(contentsOf: destinationWAL)
+        #expect(!FileManager.default.fileExists(atPath: sourceWAL.path))
+        #expect(FileManager.default.fileExists(atPath: destination.path))
+        #expect(FileManager.default.fileExists(atPath: destinationWAL.path))
+        #expect(movedStore == Data("store".utf8))
+        #expect(movedWAL == Data("wal".utf8))
+
+        try Data("replacement".utf8).write(to: legacy)
+        try Data("replacement-wal".utf8).write(to: sourceWAL)
+        try moveLegacyCadenceStore(from: legacy, to: destination)
+
+        let storeAfterSecondMove = try Data(contentsOf: destination)
+        let walAfterSecondMove = try Data(contentsOf: destinationWAL)
+        #expect(storeAfterSecondMove == movedStore)
+        #expect(walAfterSecondMove == movedWAL)
+        #expect(FileManager.default.fileExists(atPath: legacy.path))
+        #expect(FileManager.default.fileExists(atPath: sourceWAL.path))
+    }
+
     private func date(hour: Int) -> Date {
         Calendar.current.date(
             bySettingHour: hour % 24,

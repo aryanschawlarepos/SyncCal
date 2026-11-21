@@ -73,17 +73,35 @@ func makeCadenceContainer() throws -> ModelContainer {
     return try ModelContainer(for: CadenceTask.self, TaskList.self, configurations: configuration)
 }
 
-private func moveLegacyCadenceStore(from legacyStore: URL, to groupStore: URL) throws {
+func moveLegacyCadenceStore(from legacyStore: URL, to groupStore: URL) throws {
     let fileManager = FileManager.default
+    let sourceDirectory = legacyStore.deletingLastPathComponent()
     let destinationDirectory = groupStore.deletingLastPathComponent()
+    let sourceStore = sourceDirectory.appendingPathComponent("default.store")
+    let destinationStore = destinationDirectory.appendingPathComponent("default.store")
+
+    // default.store is the finished signal. Leave a real group store alone.
+    if fileManager.fileExists(atPath: destinationStore.path) || !fileManager.fileExists(atPath: sourceStore.path) {
+        return
+    }
+
     try fileManager.createDirectory(at: destinationDirectory, withIntermediateDirectories: true)
 
-    let sourceDirectory = legacyStore.deletingLastPathComponent()
-    for name in ["default.store", "default.store-wal", "default.store-shm"] {
+    // Sidecars land first. A crash before default.store still retries, because the group file is absent.
+    for name in ["default.store-wal", "default.store-shm"] {
         let source = sourceDirectory.appendingPathComponent(name)
         guard fileManager.fileExists(atPath: source.path) else { continue }
         let destination = destinationDirectory.appendingPathComponent(name)
-        guard !fileManager.fileExists(atPath: destination.path) else { continue }
+        if fileManager.fileExists(atPath: destination.path) {
+            let aside = destination.appendingPathExtension("aside")
+            if fileManager.fileExists(atPath: aside.path) {
+                try fileManager.removeItem(at: aside)
+            }
+            try fileManager.moveItem(at: destination, to: aside)
+        }
         try fileManager.moveItem(at: source, to: destination)
     }
+
+    guard !fileManager.fileExists(atPath: destinationStore.path) else { return }
+    try fileManager.moveItem(at: sourceStore, to: destinationStore)
 }
