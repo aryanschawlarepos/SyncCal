@@ -32,15 +32,6 @@ struct ListLiveActivity: Widget {
 private enum LockScreenPalette {
     static let standardBackground = Color(red: 32.0 / 255.0, green: 32.0 / 255.0, blue: 42.0 / 255.0)
     static let completed = Color(red: 138.0 / 255.0, green: 215.0 / 255.0, blue: 193.0 / 255.0)
-
-    static func background(for appearance: LockScreenAppearance) -> Color {
-        switch appearance {
-        case .standard:
-            standardBackground
-        case .transparent:
-            Color.clear
-        }
-    }
 }
 
 private struct ListActivityLockScreen: View {
@@ -59,7 +50,29 @@ private struct ListActivityLockScreen: View {
             ListActivityRows(rows: state.rows)
         }
         .foregroundStyle(.white)
-        .containerBackground(LockScreenPalette.background(for: state.appearance), for: .widget)
+        .modifier(LockScreenActivityChrome(appearance: state.appearance))
+    }
+}
+
+/// Lock Screen Live Activities ignore a clear `containerBackground` and fill with an
+/// opaque dark card. `activityBackgroundTint(.clear)` is what lets the wallpaper
+/// show through the way Yike’s transparent activity does.
+private struct LockScreenActivityChrome: ViewModifier {
+    let appearance: LockScreenAppearance
+
+    func body(content: Content) -> some View {
+        switch appearance {
+        case .standard:
+            content
+                .containerBackground(LockScreenPalette.standardBackground, for: .widget)
+                .activityBackgroundTint(LockScreenPalette.standardBackground)
+                .activitySystemActionForegroundColor(.white)
+        case .transparent:
+            content
+                .containerBackground(.clear, for: .widget)
+                .activityBackgroundTint(.clear)
+                .activitySystemActionForegroundColor(.white)
+        }
     }
 }
 
