@@ -5,6 +5,7 @@
 //  Created by Rork on July 16, 2026.
 //
 
+import SwiftData
 import Testing
 @testable import Cadence
 
@@ -280,6 +281,58 @@ struct CadenceTests {
         #expect(FileManager.default.fileExists(atPath: sourceWAL.path))
     }
 
+    @Test @MainActor func whitespaceSaveInsertsNothing() throws {
+        let context = try makeMemoryContext()
+
+        let saved = try saveLockScreenTask(title: "  ", scope: .myDay, now: today, context: context)
+
+        #expect(saved == false)
+        #expect(try context.fetch(FetchDescriptor<CadenceTask>()).isEmpty)
+    }
+
+    @Test @MainActor func myDaySaveSetsDueDateAndNoList() throws {
+        let context = try makeMemoryContext()
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+
+        let saved = try saveLockScreenTask(title: " Milk ", scope: .myDay, now: now, context: context)
+        let task = try context.fetch(FetchDescriptor<CadenceTask>()).first
+
+        #expect(saved == true)
+        #expect(task?.title == "Milk")
+        #expect(task?.dueDate == now)
+        #expect(task?.listId == nil)
+        #expect(task?.completed == false)
+    }
+
+    @Test @MainActor func customListSaveSetsTheListAndNoDueDate() throws {
+        let context = try makeMemoryContext()
+        let list = UUID()
+
+        _ = try saveLockScreenTask(title: "Milk", scope: .list(list), now: today, context: context)
+        let task = try context.fetch(FetchDescriptor<CadenceTask>()).first
+
+        #expect(task?.listId == list)
+        #expect(task?.dueDate == nil)
+    }
+
+    @Test @MainActor func completingATaskOnceMarksItDone() throws {
+        let context = try makeMemoryContext()
+        _ = try saveLockScreenTask(title: "Milk", scope: .myDay, now: today, context: context)
+        let id = try context.fetch(FetchDescriptor<CadenceTask>()).first!.id
+
+        #expect(try completeLockScreenTask(id: id, context: context) == true)
+        #expect(try completeLockScreenTask(id: id, context: context) == false)
+        #expect(try context.fetch(FetchDescriptor<CadenceTask>()).first?.completed == true)
+    }
+
+    @MainActor
+    private func makeMemoryContext() throws -> ModelContext {
+        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try ModelContainer(for: CadenceTask.self, TaskList.self, configurations: configuration)
+        MemoryContainerBox.containers.append(container)
+        return container.mainContext
+    }
+
     private func date(hour: Int) -> Date {
         Calendar.current.date(
             bySettingHour: hour % 24,
@@ -342,6 +395,11 @@ struct CadenceTests {
 
     private func row(_ title: String, completed: Bool = false) -> LockScreenTaskRow {
         LockScreenTaskRow(id: stableID(for: title), title: title, completed: completed)
+    }
+
+    @MainActor
+    private enum MemoryContainerBox {
+        static var containers: [ModelContainer] = []
     }
 
     private func stableID(for title: String) -> UUID {
