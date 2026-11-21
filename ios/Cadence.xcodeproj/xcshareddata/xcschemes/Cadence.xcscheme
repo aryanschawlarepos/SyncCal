@@ -20,6 +20,20 @@
                ReferencedContainer = "container:Cadence.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "YES"
+            buildForProfiling = "YES"
+            buildForArchiving = "YES"
+            buildForAnalyzing = "YES">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "105FC5C82E9EAD3200EA8BCF"
+               BuildableName = "CadenceLockScreen.appex"
+               BlueprintName = "CadenceLockScreen"
+               ReferencedContainer = "container:Cadence.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
       </BuildActionEntries>
    </BuildAction>
    <TestAction
