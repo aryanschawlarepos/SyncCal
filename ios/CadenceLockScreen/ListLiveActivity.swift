@@ -32,25 +32,20 @@ struct ListLiveActivity: Widget {
 private enum LockScreenPalette {
     static let standardBackground = Color(red: 32.0 / 255.0, green: 32.0 / 255.0, blue: 42.0 / 255.0)
     static let completed = Color(red: 138.0 / 255.0, green: 215.0 / 255.0, blue: 193.0 / 255.0)
+    /// Matches Yike’s lock-screen task title: New York / system serif, bold, ~17pt.
+    static let titleFont = Font.system(size: 17, weight: .semibold, design: .serif)
 }
 
 private struct ListActivityLockScreen: View {
     let state: ListActivityAttributes.ContentState
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(state.name)
-                    .font(.system(size: 16, weight: .semibold, design: .rounded))
-                    .lineLimit(1)
-                Spacer(minLength: 8)
-                Text("\(state.openCount)")
-                    .font(.system(size: 16, weight: .semibold, design: .rounded))
-            }
-            ListActivityRows(rows: state.rows)
-        }
-        .foregroundStyle(.white)
-        .modifier(LockScreenActivityChrome(appearance: state.appearance))
+        ListActivityRows(rows: state.rows)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .foregroundStyle(.white)
+            .modifier(LockScreenActivityChrome(appearance: state.appearance))
     }
 }
 
@@ -80,21 +75,26 @@ private struct ListActivityRows: View {
     let rows: [LockScreenTaskRow]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 10) {
             ForEach(rows) { row in
                 Button(intent: CompleteLockScreenTaskIntent(taskID: row.id.uuidString)) {
-                    HStack(spacing: 8) {
+                    HStack(alignment: .center, spacing: 10) {
                         Image(systemName: row.completed ? "checkmark.circle.fill" : "circle")
+                            .font(.system(size: 18, weight: .regular))
                             .foregroundStyle(row.completed ? LockScreenPalette.completed : Color.white)
                         Text(row.title)
-                            .font(.system(size: 16, weight: .semibold, design: .rounded))
+                            .font(LockScreenPalette.titleFont)
                             .strikethrough(row.completed)
                             .lineLimit(1)
+                            .minimumScaleFactor(0.85)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
