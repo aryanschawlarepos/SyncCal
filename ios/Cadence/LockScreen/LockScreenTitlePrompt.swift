@@ -83,7 +83,11 @@ struct LockScreenTitlePrompt: View {
 
         dismiss()
         Task {
-            await updateLockScreenAfterAdd(scope: scope, tasks: tasks, lists: lists)
+            do {
+                try await updateLockScreenAfterAdd(scope: scope, tasks: tasks, lists: lists)
+            } catch {
+                return
+            }
         }
     }
 }

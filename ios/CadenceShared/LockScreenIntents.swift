@@ -8,6 +8,10 @@ import AppIntents
 import Foundation
 import SwiftData
 
+enum CadenceAppLaunch {
+    static var openURL: (@MainActor (URL) async -> Void)?
+}
+
 @MainActor
 func saveLockScreenTask(
     title: String,
@@ -69,42 +73,59 @@ func updateLockScreenAfterAdd(
     scope: LockScreenScope,
     tasks: [CadenceTask],
     lists: [TaskList]
-) async {
+) async throws {
     let appearance = storedLockScreenAppearance()
+    var pinError: LockScreenPinError?
     if !ListLiveActivityCenter.isRunning(scope) {
         let names = Dictionary(lists.map { ($0.id, $0.name) }, uniquingKeysWith: { _, latest in latest })
         if let name = lockScreenDisplayName(scope: scope, listNames: names) {
-            try? await ListLiveActivityCenter.pin(
-                scope: scope,
-                name: name,
-                tasks: tasks,
-                appearance: appearance
-            )
+            do {
+                try await ListLiveActivityCenter.pin(
+                    scope: scope,
+                    name: name,
+                    tasks: tasks,
+                    appearance: appearance
+                )
+            } catch let error as LockScreenPinError {
+                pinError = error
+            }
         }
     }
     await ListLiveActivityCenter.sync(tasks: tasks, lists: lists, appearance: appearance)
+    if let pinError {
+        throw pinError
+    }
 }
 
-struct AddLockScreenTaskIntent: AppIntent {
+struct AddLockScreenTaskIntent: LiveActivityIntent {
     static var title: LocalizedStringResource = "Add Task"
     static var openAppWhenRun = false
 
     @Parameter(title: "Title")
     var title: String?
 
-    func perform() async throws -> some IntentResult & OpensIntent {
+    func perform() async throws -> some IntentResult {
         let scope = await currentLockScreenAddScope()
         let provided: String
         do {
             let value = try await $title.requestValue(IntentDialog("Task title"))
             provided = value ?? ""
+        } catch is CancellationError {
+            return .result()
         } catch {
             storeLockScreenFallbackScope(scope)
-            return .result(opensIntent: LockScreenAddFollowUpIntent(prompt: true))
+            if let openURL = CadenceAppLaunch.openURL {
+                await openURL(CadenceAppGroup.addURL)
+            }
+            return .result()
         }
 
-        _ = try await saveLockScreenAdd(title: provided, scope: scope)
-        return .result(opensIntent: LockScreenAddFollowUpIntent(prompt: false))
+        do {
+            _ = try await saveLockScreenAdd(title: provided, scope: scope)
+        } catch is LockScreenPinError {
+            return .result()
+        }
+        return .result()
     }
 }
 
@@ -132,40 +153,6 @@ struct CompleteLockScreenTaskIntent: LiveActivityIntent {
     }
 }
 
-struct OpenLockScreenAddIntent: AppIntent {
-    static var title: LocalizedStringResource = "Add Task"
-    static var openAppWhenRun = true
-    static var isDiscoverable: Bool { false }
-
-    func perform() async throws -> some IntentResult & OpensIntent {
-        .result(opensIntent: OpenURLIntent(CadenceAppGroup.addURL))
-    }
-}
-
-struct LockScreenAddFollowUpIntent: AppIntent {
-    static var title: LocalizedStringResource = "Add Task"
-    static var openAppWhenRun = false
-    static var isDiscoverable = false
-
-    @Parameter(title: "Prompt")
-    var prompt: Bool
-
-    init() {
-        prompt = false
-    }
-
-    init(prompt: Bool) {
-        self.prompt = prompt
-    }
-
-    func perform() async throws -> some IntentResult & OpensIntent {
-        let url = prompt
-            ? CadenceAppGroup.addURL
-            : URL(string: "cadence-internal://lock-screen-add-finished")!
-        return .result(opensIntent: OpenURLIntent(url))
-    }
-}
-
 @MainActor
 private func currentLockScreenAddScope() -> LockScreenScope {
     let running: [(scope: LockScreenScope, pinnedAt: Date)] = Activity<ListActivityAttributes>.activities.compactMap { activity in
@@ -190,20 +177,18 @@ private func storedLockScreenAppearance() -> LockScreenAppearance {
 
 @MainActor
 private func saveLockScreenAdd(title: String, scope: LockScreenScope) async throws -> Bool {
-    let container = try makeCadenceContainer()
-    let context = container.mainContext
+    let context = try CadenceSharedContainer.context()
     let saved = try saveLockScreenTask(title: title, scope: scope, now: Date(), context: context)
     guard saved else { return false }
     let tasks = try context.fetch(FetchDescriptor<CadenceTask>())
     let lists = try context.fetch(FetchDescriptor<TaskList>())
-    await updateLockScreenAfterAdd(scope: scope, tasks: tasks, lists: lists)
+    try await updateLockScreenAfterAdd(scope: scope, tasks: tasks, lists: lists)
     return true
 }
 
 @MainActor
 private func writeLockScreenCompletion(id: UUID) async throws {
-    let container = try makeCadenceContainer()
-    let context = container.mainContext
+    let context = try CadenceSharedContainer.context()
     _ = try completeLockScreenTask(id: id, context: context)
     let tasks = try context.fetch(FetchDescriptor<CadenceTask>())
     let lists = try context.fetch(FetchDescriptor<TaskList>())

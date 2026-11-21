@@ -73,6 +73,18 @@ func makeCadenceContainer() throws -> ModelContainer {
     return try ModelContainer(for: CadenceTask.self, TaskList.self, configurations: configuration)
 }
 
+@MainActor
+enum CadenceSharedContainer {
+    static var container: ModelContainer?
+
+    static func context() throws -> ModelContext {
+        if let container {
+            return container.mainContext
+        }
+        return try makeCadenceContainer().mainContext
+    }
+}
+
 func moveLegacyCadenceStore(from legacyStore: URL, to groupStore: URL) throws {
     let fileManager = FileManager.default
     let sourceDirectory = legacyStore.deletingLastPathComponent()
